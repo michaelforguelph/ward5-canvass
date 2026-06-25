@@ -55,8 +55,9 @@
   .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
 
   .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
-  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea, .modal select {
     width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+    background: white; -webkit-appearance: menulist;
   }
   .modal textarea { min-height: 60px; resize: vertical; }
 
@@ -206,10 +207,28 @@
     <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
 
     <label>Phone (optional)</label>
-    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off"
+           placeholder="(519) 555-1234" oninput="formatPhone(this)" />
 
     <label>Top issue (optional)</label>
-    <input id="issueInput" type="text" />
+    <select id="issueSelect" onchange="onIssueChange()">
+      <option value="">— Select an issue —</option>
+      <option>Transit / Bus service</option>
+      <option>Cycling / Walkability</option>
+      <option>Housing / Affordability</option>
+      <option>Childcare / Daycare</option>
+      <option>Property taxes</option>
+      <option>Roads / Snow removal</option>
+      <option>Garbage / Recycling</option>
+      <option>Parks / Recreation</option>
+      <option>Safety / Crime</option>
+      <option>Development / Zoning</option>
+      <option>Climate / Environment</option>
+      <option>Community / Neighbourhood</option>
+      <option value="Other">Other (type below)</option>
+    </select>
+    <input id="issueOtherInput" type="text" placeholder="Specify other issue…"
+           style="display:none; margin-top:6px;" />
 
     <label>Notes</label>
     <textarea id="notesInput"></textarea>
@@ -329,7 +348,10 @@ map.on("click", (e) => {
   document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
   tags = {family:null, renter:null, lawn:null, fu:null};
   document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
-  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  ["nameInput","emailInput","phoneInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("issueSelect").value = "";
+  document.getElementById("issueOtherInput").value = "";
+  document.getElementById("issueOtherInput").style.display = "none";
   document.getElementById("modalBg").classList.add("active");
 });
 
@@ -358,8 +380,31 @@ function closeModal() {
   document.getElementById("modalBg").classList.remove("active");
 }
 
+function formatPhone(input) {
+  let d = input.value.replace(/\D/g, "").slice(0, 10);
+  if (d.length === 0) { input.value = ""; return; }
+  if (d.length <= 3) input.value = "(" + d;
+  else if (d.length <= 6) input.value = "(" + d.slice(0,3) + ") " + d.slice(3);
+  else input.value = "(" + d.slice(0,3) + ") " + d.slice(3,6) + "-" + d.slice(6);
+}
+
+function onIssueChange() {
+  const sel = document.getElementById("issueSelect");
+  const other = document.getElementById("issueOtherInput");
+  other.style.display = (sel.value === "Other") ? "block" : "none";
+}
+
 function saveEntry() {
   if (!statusVal) { alert("Please pick a status"); return; }
+  // Email warning (soft — let them save anyway)
+  const emailVal = document.getElementById("emailInput").value.trim();
+  if (emailVal && !emailVal.includes("@")) {
+    if (!confirm("That email is missing an @ symbol. Save anyway?")) return;
+  }
+  // Resolve issue (dropdown OR "Other" text)
+  const issueSel = document.getElementById("issueSelect").value;
+  const issueOther = document.getElementById("issueOtherInput").value.trim();
+  const issueVal = (issueSel === "Other") ? issueOther : issueSel;
   const entry = {
     timestamp: new Date().toISOString(),
     volunteer,
@@ -373,7 +418,7 @@ function saveEntry() {
     name: document.getElementById("nameInput").value.trim(),
     email: document.getElementById("emailInput").value.trim(),
     phone: document.getElementById("phoneInput").value.trim(),
-    issue: document.getElementById("issueInput").value.trim(),
+    issue: issueVal,
     notes: document.getElementById("notesInput").value.trim(),
     lat: tapLat, lon: tapLon,
     _synced: false,
