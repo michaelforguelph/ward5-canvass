@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 37 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 37</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 226</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "37";
+const ZONE_NAME = "Zone 37";
+const ZONE_POLYGON = [[43.526638, -80.202413], [43.526934, -80.20286], [43.526249, -80.203652], [43.525008, -80.202094], [43.525592, -80.200996], [43.524592, -80.199196], [43.526749, -80.195876], [43.528674, -80.198621], [43.528452, -80.199234], [43.52873, -80.199694], [43.526638, -80.202413]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.526620967684636, -80.19963050821595];     // [lat, lon]
+const ADDRESSES = [{"address": "247 Macalister Boulevard", "lat": 43.528190926334844, "lon": -80.19848729884606}, {"address": "81 Kirvan Drive", "lat": 43.52769183185513, "lon": -80.20088563188179}, {"address": "83 Kirvan Drive", "lat": 43.52764190622228, "lon": -80.20081207915374}, {"address": "87 Kirvan Drive", "lat": 43.52760014101123, "lon": -80.20074096680939}, {"address": "89 Kirvan Drive", "lat": 43.527555356681, "lon": -80.20068376930392}, {"address": "93 Kirvan Drive", "lat": 43.527514871129306, "lon": -80.20061784270352}, {"address": "95 Kirvan Drive", "lat": 43.5274747260534, "lon": -80.20055760419524}, {"address": "99 Kirvan Drive", "lat": 43.52740181150196, "lon": -80.2004913834098}, {"address": "103 Kirvan Drive", "lat": 43.52734247206627, "lon": -80.20040423433814}, {"address": "107 Kirvan Drive", "lat": 43.527260014764934, "lon": -80.20028265929832}, {"address": "108 Kirvan Drive", "lat": 43.52745884160221, "lon": -80.20002168818537}, {"address": "104 Kirvan Drive", "lat": 43.527534448404595, "lon": -80.20013780483357}, {"address": "100 Kirvan Drive", "lat": 43.527598751885606, "lon": -80.20022969107512}, {"address": "94 Kirvan Drive", "lat": 43.527699099397616, "lon": -80.20038340720633}, {"address": "96 Kirvan Drive", "lat": 43.527654457221324, "lon": -80.20031707892876}, {"address": "88 Kirvan Drive", "lat": 43.52778377672372, "lon": -80.20049965988025}, {"address": "90 Kirvan Drive", "lat": 43.52773921745095, "lon": -80.20043745122366}, {"address": "82 Kirvan Drive", "lat": 43.52789016134591, "lon": -80.20062261811846}, {"address": "84 Kirvan Drive", "lat": 43.527827693090586, "lon": -80.20056097126383}, {"address": "34 Ambrous Crescent", "lat": 43.528124023734705, "lon": -80.20026784553215}, {"address": "36 Ambrous Crescent", "lat": 43.528085592784464, "lon": -80.20031984126182}, {"address": "28 Ambrous Crescent", "lat": 43.52820936440333, "lon": -80.20014821967774}, {"address": "30 Ambrous Crescent", "lat": 43.52817093351787, "lon": -80.20020021679407}, {"address": "22 Ambrous Crescent", "lat": 43.528303759184276, "lon": -80.20002158827322}, {"address": "24 Ambrous Crescent", "lat": 43.528257774856954, "lon": -80.20008480074867}, {"address": "16 Ambrous Crescent", "lat": 43.52839279415421, "lon": -80.19990455498164}, {"address": "18 Ambrous Crescent", "lat": 43.52834986352773, "lon": -80.19996137757138}, {"address": "10 Ambrous Crescent", "lat": 43.52848218461585, "lon": -80.19978442655452}, {"address": "12 Ambrous Crescent", "lat": 43.52843532448308, "lon": -80.19984457573938}, {"address": "4 Ambrous Crescent", "lat": 43.52858431362884, "lon": -80.1996584416755}, {"address": "6 Ambrous Crescent", "lat": 43.52852968283696, "lon": -80.19973118411122}, {"address": "298 Ambrous Crescent", "lat": 43.52812994561179, "lon": -80.19909496076394}, {"address": "294 Ambrous Crescent", "lat": 43.52804731108273, "lon": -80.19919057163467}, {"address": "290 Ambrous Crescent", "lat": 43.52797665834937, "lon": -80.19927576477579}, {"address": "286 Ambrous Crescent", "lat": 43.527905201475406, "lon": -80.19936828698211}, {"address": "282 Ambrous Crescent", "lat": 43.527839583994485, "lon": -80.1994578854701}, {"address": "276 Ambrous Crescent", "lat": 43.52774278828839, "lon": -80.19958398545513}, {"address": "278 Ambrous Crescent", "lat": 43.527785053709714, "lon": -80.19952811866403}, {"address": "270 Ambrous Crescent", "lat": 43.52765348321525, "lon": -80.19969801809596}, {"address": "272 Ambrous Crescent", "lat": 43.52769538054932, "lon": -80.19964589978679}, {"address": "279 Ambrous Crescent", "lat": 43.52758830554622, "lon": -80.19925618559901}, {"address": "283 Ambrous Crescent", "lat": 43.527657687320634, "lon": -80.19916617116345}, {"address": "287 Ambrous Crescent", "lat": 43.527724201348356, "lon": -80.19908260721955}, {"address": "291 Ambrous Crescent", "lat": 43.52779314498749, "lon": -80.19898675343451}, {"address": "295 Ambrous Crescent", "lat": 43.527854519263045, "lon": -80.19889470594919}, {"address": "299 Ambrous Crescent", "lat": 43.527941006838255, "lon": -80.19878283260333}, {"address": "249 Ambrous Crescent", "lat": 43.52717023972743, "lon": -80.19960308757058}, {"address": "143 Ambrous Crescent", "lat": 43.52647366792665, "lon": -80.20282097081368}, {"address": "147 Ambrous Crescent", "lat": 43.5263170667354, "lon": -80.20289898827528}, {"address": "151 Ambrous Crescent", "lat": 43.52615044448282, "lon": -80.20287649234042}, {"address": "155 Ambrous Crescent", "lat": 43.52603318655194, "lon": -80.2027066034445}, {"address": "159 Ambrous Crescent", "lat": 43.525939788916105, "lon": -80.20255766800511}, {"address": "163 Ambrous Crescent", "lat": 43.52584185983411, "lon": -80.20242094713076}, {"address": "167 Ambrous Crescent", "lat": 43.52574633618756, "lon": -80.20225359496429}, {"address": "171 Ambrous Crescent", "lat": 43.52566838521917, "lon": -80.20203661462857}, {"address": "175 Ambrous Crescent", "lat": 43.525696880820064, "lon": -80.20183228142419}, {"address": "179 Ambrous Crescent", "lat": 43.52575924131149, "lon": -80.20161459585617}, {"address": "183 Ambrous Crescent", "lat": 43.52585359172288, "lon": -80.20147814949061}, {"address": "187 Ambrous Crescent", "lat": 43.52595274392528, "lon": -80.20134840706207}, {"address": "191 Ambrous Crescent", "lat": 43.526055147270355, "lon": -80.20121426416794}, {"address": "195 Ambrous Crescent", "lat": 43.52615597584456, "lon": -80.20107345305874}, {"address": "211 Ambrous Crescent", "lat": 43.52637061086874, "lon": -80.20074902820811}, {"address": "215 Ambrous Crescent", "lat": 43.5264782885347, "lon": -80.20060334722214}, {"address": "219 Ambrous Crescent", "lat": 43.52655943561875, "lon": -80.20049804249275}, {"address": "223 Ambrous Crescent", "lat": 43.52662906404319, "lon": -80.20039487332514}, {"address": "227 Ambrous Crescent", "lat": 43.526717924077, "lon": -80.20028212167827}, {"address": "228 Ambrous Crescent", "lat": 43.52711358258625, "lon": -80.20061918603919}, {"address": "224 Ambrous Crescent", "lat": 43.527022883489956, "lon": -80.20072973721238}, {"address": "220 Ambrous Crescent", "lat": 43.52695174660875, "lon": -80.20085030341755}, {"address": "216 Ambrous Crescent", "lat": 43.52687183139831, "lon": -80.20094626268236}, {"address": "212 Ambrous Crescent", "lat": 43.526788280030416, "lon": -80.2010544378889}, {"address": "208 Ambrous Crescent", "lat": 43.526702032970654, "lon": -80.20116626058797}, {"address": "204 Ambrous Crescent", "lat": 43.52662471593931, "lon": -80.20127572900097}, {"address": "200 Ambrous Crescent", "lat": 43.5265420624801, "lon": -80.20138268739065}, {"address": "196 Ambrous Crescent", "lat": 43.52646836875668, "lon": -80.20148238950964}, {"address": "192 Ambrous Crescent", "lat": 43.526388398095364, "lon": -80.20158814995985}, {"address": "188 Ambrous Crescent", "lat": 43.526311150854596, "lon": -80.20168536284874}, {"address": "184 Ambrous Crescent", "lat": 43.526232022423315, "lon": -80.2017997108599}, {"address": "180 Ambrous Crescent", "lat": 43.52615567323308, "lon": -80.20189570732275}, {"address": "176 Ambrous Crescent", "lat": 43.52606580174642, "lon": -80.20201729204872}, {"address": "130 Ambrous Crescent", "lat": 43.52631169061952, "lon": -80.20237046355533}, {"address": "126 Ambrous Crescent", "lat": 43.52640424457416, "lon": -80.20224768027157}, {"address": "122 Ambrous Crescent", "lat": 43.52648237703823, "lon": -80.20215170489774}, {"address": "118 Ambrous Crescent", "lat": 43.52655343156925, "lon": -80.20204584724094}, {"address": "114 Ambrous Crescent", "lat": 43.52663250440856, "lon": -80.20194130177399}, {"address": "110 Ambrous Crescent", "lat": 43.52671511517821, "lon": -80.2018416964445}, {"address": "106 Ambrous Crescent", "lat": 43.526792390454645, "lon": -80.2017395822829}, {"address": "102 Ambrous Crescent", "lat": 43.52687504424449, "lon": -80.2016326239283}, {"address": "98 Ambrous Crescent", "lat": 43.52696391806981, "lon": -80.2015294083105}, {"address": "94 Ambrous Crescent", "lat": 43.52705360726982, "lon": -80.20143968390197}, {"address": "90 Ambrous Crescent", "lat": 43.527142397256526, "lon": -80.20135117393382}, {"address": "86 Ambrous Crescent", "lat": 43.52723740822747, "lon": -80.201266407949}, {"address": "82 Ambrous Crescent", "lat": 43.527330733287705, "lon": -80.20116446520747}, {"address": "78 Ambrous Crescent", "lat": 43.52741599847993, "lon": -80.20106856357889}, {"address": "5 Macalister Boulevard", "lat": 43.525909337020586, "lon": -80.20086140118384}, {"address": "213 Macalister Boulevard", "lat": 43.5276334420664, "lon": -80.19761755959506}, {"address": "217 Macalister Boulevard", "lat": 43.52768953380516, "lon": -80.19769993302572}, {"address": "221 Macalister Boulevard", "lat": 43.52775002053425, "lon": -80.19778437315671}, {"address": "225 Macalister Boulevard", "lat": 43.52781194185297, "lon": -80.1978748854542}, {"address": "229 Macalister Boulevard", "lat": 43.527872360360284, "lon": -80.19797143956482}, {"address": "232 Macalister Boulevard", "lat": 43.52757897179935, "lon": -80.19835572663594}, {"address": "228 Macalister Boulevard", "lat": 43.527519815047896, "lon": -80.19826828122565}, {"address": "224 Macalister Boulevard", "lat": 43.52746762093072, "lon": -80.1981905571282}, {"address": "220 Macalister Boulevard", "lat": 43.52740495485745, "lon": -80.1981030756182}, {"address": "216 Macalister Boulevard", "lat": 43.52735452847662, "lon": -80.19802295857986}, {"address": "212 Macalister Boulevard", "lat": 43.52729186227651, "lon": -80.19793547740701}, {"address": "208 Macalister Boulevard", "lat": 43.527237927474225, "lon": -80.19785532300112}, {"address": "204 Macalister Boulevard", "lat": 43.52718048341946, "lon": -80.19777513233491}, {"address": "200 Macalister Boulevard", "lat": 43.527126520220925, "lon": -80.19769980110505}, {"address": "196 Macalister Boulevard", "lat": 43.52707617662177, "lon": -80.19760521862625}, {"address": "192 Macalister Boulevard", "lat": 43.527020472844306, "lon": -80.19752745680755}, {"address": "188 Macalister Boulevard", "lat": 43.526964878536475, "lon": -80.19743040740168}, {"address": "184 Macalister Boulevard", "lat": 43.52691271122606, "lon": -80.19734786188425}, {"address": "180 Macalister Boulevard", "lat": 43.526855321552304, "lon": -80.1972580264275}, {"address": "176 Macalister Boulevard", "lat": 43.52678911909632, "lon": -80.19717533076069}, {"address": "124 John Brabson Crescent", "lat": 43.52647705637398, "lon": -80.19757472194513}, {"address": "122 John Brabson Crescent", "lat": 43.52651280895984, "lon": -80.19763059667059}, {"address": "118 John Brabson Crescent", "lat": 43.526584446853725, "lon": -80.19771867029145}, {"address": "116 John Brabson Crescent", "lat": 43.52661488265014, "lon": -80.1977626492075}, {"address": "112 John Brabson Crescent", "lat": 43.526668777366055, "lon": -80.19784683372956}, {"address": "110 John Brabson Crescent", "lat": 43.52670189232873, "lon": -80.19789306042715}, {"address": "106 John Brabson Crescent", "lat": 43.5267547526094, "lon": -80.19796983521604}, {"address": "104 John Brabson Crescent", "lat": 43.52678411985905, "lon": -80.19801232375544}, {"address": "100 John Brabson Crescent", "lat": 43.526834250560434, "lon": -80.19809572824482}, {"address": "98 John Brabson Crescent", "lat": 43.52686576319939, "lon": -80.19813971925241}, {"address": "94 John Brabson Crescent", "lat": 43.52692071756017, "lon": -80.19822687524359}, {"address": "92 John Brabson Crescent", "lat": 43.52695971604743, "lon": -80.19827982565529}, {"address": "88 John Brabson Crescent", "lat": 43.52699312073186, "lon": -80.19836970887054}, {"address": "86 John Brabson Crescent", "lat": 43.527009808066076, "lon": -80.19846459274551}, {"address": "82 John Brabson Crescent", "lat": 43.527028513599554, "lon": -80.19858317389297}, {"address": "80 John Brabson Crescent", "lat": 43.527029762660646, "lon": -80.19864755763099}, {"address": "48 John Brabson Crescent", "lat": 43.52639106251055, "lon": -80.1995366743652}, {"address": "46 John Brabson Crescent", "lat": 43.52630149142133, "lon": -80.19957270370122}, {"address": "42 John Brabson Crescent", "lat": 43.52621243465303, "lon": -80.19951847464297}, {"address": "40 John Brabson Crescent", "lat": 43.52614807292596, "lon": -80.19947634956743}, {"address": "36 John Brabson Crescent", "lat": 43.526091407983685, "lon": -80.19940619180731}, {"address": "34 John Brabson Crescent", "lat": 43.526043830123854, "lon": -80.19934723065427}, {"address": "30 John Brabson Crescent", "lat": 43.52600274653068, "lon": -80.19928242078971}, {"address": "28 John Brabson Crescent", "lat": 43.525964316455976, "lon": -80.19922429784289}, {"address": "24 John Brabson Crescent", "lat": 43.52592106263059, "lon": -80.19916242367172}, {"address": "22 John Brabson Crescent", "lat": 43.525881547869105, "lon": -80.19910576925466}, {"address": "18 John Brabson Crescent", "lat": 43.52583673358016, "lon": -80.19903425994686}, {"address": "16 John Brabson Crescent", "lat": 43.525796692625164, "lon": -80.19897538026623}, {"address": "12 John Brabson Crescent", "lat": 43.525751836448656, "lon": -80.19891126927452}, {"address": "10 John Brabson Crescent", "lat": 43.525725990156786, "lon": -80.19887057700161}, {"address": "6 John Brabson Crescent", "lat": 43.52566548348716, "lon": -80.19877765479374}, {"address": "4 John Brabson Crescent", "lat": 43.52561855270129, "lon": -80.19871214104187}, {"address": "3 John Brabson Crescent", "lat": 43.525898629682956, "lon": -80.19835556958051}, {"address": "5 John Brabson Crescent", "lat": 43.52593588057059, "lon": -80.19840957190716}, {"address": "9 John Brabson Crescent", "lat": 43.5259866459465, "lon": -80.19850044890623}, {"address": "11 John Brabson Crescent", "lat": 43.526021042796266, "lon": -80.19854846641842}, {"address": "15 John Brabson Crescent", "lat": 43.526071920126604, "lon": -80.19861949066039}, {"address": "17 John Brabson Crescent", "lat": 43.52610920569645, "lon": -80.19866753936435}, {"address": "21 John Brabson Crescent", "lat": 43.52616077780487, "lon": -80.19874353544236}, {"address": "23 John Brabson Crescent", "lat": 43.52619806331451, "lon": -80.19879158305585}, {"address": "51 John Brabson Crescent", "lat": 43.52629329497531, "lon": -80.19906459551017}, {"address": "53 John Brabson Crescent", "lat": 43.52633333952656, "lon": -80.1990084447786}, {"address": "57 John Brabson Crescent", "lat": 43.52639295940839, "lon": -80.19893959950289}, {"address": "59 John Brabson Crescent", "lat": 43.52643517702482, "lon": -80.19888247935127}, {"address": "63 John Brabson Crescent", "lat": 43.526484650439336, "lon": -80.19881948157727}, {"address": "65 John Brabson Crescent", "lat": 43.526519578267845, "lon": -80.19877419401479}, {"address": "69 John Brabson Crescent", "lat": 43.52656469586772, "lon": -80.19871511961685}, {"address": "71 John Brabson Crescent", "lat": 43.52660326286172, "lon": -80.19866490807635}, {"address": "75 John Brabson Crescent", "lat": 43.52666299460084, "lon": -80.19857621143329}, {"address": "77 John Brabson Crescent", "lat": 43.52669866146644, "lon": -80.19852795374761}, {"address": "105 John Brabson Crescent", "lat": 43.526513920721456, "lon": -80.19837210627641}, {"address": "107 John Brabson Crescent", "lat": 43.526484551821646, "lon": -80.19832910669263}, {"address": "111 John Brabson Crescent", "lat": 43.526421513784896, "lon": -80.19823710467465}, {"address": "113 John Brabson Crescent", "lat": 43.52639433962932, "lon": -80.19818916459892}, {"address": "117 John Brabson Crescent", "lat": 43.52635067266854, "lon": -80.19812020298671}, {"address": "119 John Brabson Crescent", "lat": 43.52631052067871, "lon": -80.19806815328242}, {"address": "123 John Brabson Crescent", "lat": 43.526255365381424, "lon": -80.19798715617037}, {"address": "125 John Brabson Crescent", "lat": 43.52621806915184, "lon": -80.19794109405916}, {"address": "48 Macalister Boulevard", "lat": 43.52535926855753, "lon": -80.19910002263586}, {"address": "44 Macalister Boulevard", "lat": 43.525430130226695, "lon": -80.19925098310834}, {"address": "40 Macalister Boulevard", "lat": 43.525502900045176, "lon": -80.19936676246041}, {"address": "36 Macalister Boulevard", "lat": 43.52557056014272, "lon": -80.1994801396903}, {"address": "32 Macalister Boulevard", "lat": 43.525639861936746, "lon": -80.1996052699229}, {"address": "28 Macalister Boulevard", "lat": 43.52572118222519, "lon": -80.19971879500592}, {"address": "24 Macalister Boulevard", "lat": 43.525799087748275, "lon": -80.1998322838588}, {"address": "20 Macalister Boulevard", "lat": 43.52587191014453, "lon": -80.19993867648672}, {"address": "16 Macalister Boulevard", "lat": 43.52595489845147, "lon": -80.2000592612042}, {"address": "12 Macalister Boulevard", "lat": 43.52603116279059, "lon": -80.200160998081}, {"address": "8 Macalister Boulevard", "lat": 43.5261057330141, "lon": -80.20026037051127}, {"address": "9 Macalister Boulevard", "lat": 43.525783942229744, "lon": -80.20069107487527}, {"address": "15 Macalister Boulevard", "lat": 43.525685734982254, "lon": -80.20054450959807}, {"address": "17 Macalister Boulevard", "lat": 43.52558924728802, "lon": -80.20039561792662}, {"address": "21 Macalister Boulevard", "lat": 43.52549617584806, "lon": -80.20024676202792}, {"address": "25 Macalister Boulevard", "lat": 43.525394579077975, "lon": -80.2000954688403}, {"address": "29 Macalister Boulevard", "lat": 43.52529647742222, "lon": -80.19993013310302}, {"address": "33 Macalister Boulevard", "lat": 43.52521714553816, "lon": -80.19976734517917}, {"address": "37 Macalister Boulevard", "lat": 43.52514125556297, "lon": -80.19959990266045}, {"address": "41 Macalister Boulevard", "lat": 43.5250536654923, "lon": -80.1993877440938}, {"address": "45 Macalister Boulevard", "lat": 43.525002028154766, "lon": -80.19915954463256}, {"address": "49 Macalister Boulevard", "lat": 43.524994919917, "lon": -80.19890835722057}, {"address": "53 Macalister Boulevard", "lat": 43.525098442738106, "lon": -80.19872172215773}, {"address": "57 Macalister Boulevard", "lat": 43.525184514278, "lon": -80.19860061173637}, {"address": "61 Macalister Boulevard", "lat": 43.525284300960706, "lon": -80.19847026119447}, {"address": "65 Macalister Boulevard", "lat": 43.52539263737745, "lon": -80.19833765371763}, {"address": "87 Macalister Boulevard", "lat": 43.52562146434884, "lon": -80.19803736750454}, {"address": "91 Macalister Boulevard", "lat": 43.52569890484335, "lon": -80.19793259009498}, {"address": "95 Macalister Boulevard", "lat": 43.52577115521076, "lon": -80.1978394910951}, {"address": "99 Macalister Boulevard", "lat": 43.52583996434742, "lon": -80.19775104828051}, {"address": "103 Macalister Boulevard", "lat": 43.525901969700826, "lon": -80.1976578396211}, {"address": "107 Macalister Boulevard", "lat": 43.525979383345515, "lon": -80.19755775407629}, {"address": "129 Macalister Boulevard", "lat": 43.52620215691526, "lon": -80.19730036009484}, {"address": "133 Macalister Boulevard", "lat": 43.52626874338438, "lon": -80.1972162766729}, {"address": "137 Macalister Boulevard", "lat": 43.5263301475658, "lon": -80.19713920280827}, {"address": "141 Macalister Boulevard", "lat": 43.52639010597235, "lon": -80.19705807666166}, {"address": "145 Macalister Boulevard", "lat": 43.526444917010615, "lon": -80.19697790467491}, {"address": "149 Macalister Boulevard", "lat": 43.52650117371769, "lon": -80.19690178467188}, {"address": "153 Macalister Boulevard", "lat": 43.52656405831447, "lon": -80.19682270810013}, {"address": "157 Macalister Boulevard", "lat": 43.52663648612925, "lon": -80.1967447434433}, {"address": "161 Macalister Boulevard", "lat": 43.52672663277235, "lon": -80.19665081624754}, {"address": "165 Macalister Boulevard", "lat": 43.526836990320916, "lon": -80.19661969398564}, {"address": "169 Macalister Boulevard", "lat": 43.526945557848286, "lon": -80.19664508551831}, {"address": "173 Macalister Boulevard", "lat": 43.527039786684774, "lon": -80.19673796097585}, {"address": "177 Macalister Boulevard", "lat": 43.527105978059936, "lon": -80.19685274483373}, {"address": "181 Macalister Boulevard", "lat": 43.52715920093325, "lon": -80.19692297178022}, {"address": "185 Macalister Boulevard", "lat": 43.52722113486199, "lon": -80.19701146379916}, {"address": "189 Macalister Boulevard", "lat": 43.527280858809576, "lon": -80.19710094189745}, {"address": "193 Macalister Boulevard", "lat": 43.52733841960998, "lon": -80.19718332953909}, {"address": "197 Macalister Boulevard", "lat": 43.5273966526516, "lon": -80.19727682982148}, {"address": "201 Macalister Boulevard", "lat": 43.52745278968926, "lon": -80.19735112733039}, {"address": "205 Macalister Boulevard", "lat": 43.52751394894806, "lon": -80.1974466780524}, {"address": "209 Macalister Boulevard", "lat": 43.527574469886204, "lon": -80.19752506089809}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 226;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

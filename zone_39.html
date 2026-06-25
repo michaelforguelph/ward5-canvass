@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 39 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 39</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 310</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "39";
+const ZONE_NAME = "Zone 39";
+const ZONE_POLYGON = [[43.526489, -80.191121], [43.52336, -80.197811], [43.521333, -80.197109], [43.519657, -80.191619], [43.522962, -80.187609], [43.526489, -80.191121]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.522911686643546, -80.19266909611206];     // [lat, lon]
+const ADDRESSES = [{"address": "2 Hauser Court", "lat": 43.522148751131276, "lon": -80.19567603993966}, {"address": "4 Hauser Court", "lat": 43.52206912649491, "lon": -80.19578377069818}, {"address": "6 Hauser Court", "lat": 43.521989502654016, "lon": -80.1958915011613}, {"address": "8 Hauser Court", "lat": 43.521909878717004, "lon": -80.19599923257825}, {"address": "10 Hauser Court", "lat": 43.52182637027594, "lon": -80.19611221725597}, {"address": "12 Hauser Court", "lat": 43.52174286082795, "lon": -80.19622520287113}, {"address": "14 Hauser Court", "lat": 43.52166964101556, "lon": -80.19640591577098}, {"address": "16 Hauser Court", "lat": 43.521645689392656, "lon": -80.19657203284898}, {"address": "18 Hauser Court", "lat": 43.52162291210483, "lon": -80.19673000833662}, {"address": "20 Hauser Court", "lat": 43.52156872835262, "lon": -80.1969891960194}, {"address": "22 Hauser Court", "lat": 43.521652235109876, "lon": -80.19719739513656}, {"address": "24 Hauser Court", "lat": 43.521855454057274, "lon": -80.19725458857285}, {"address": "23 Hauser Court", "lat": 43.52200610757889, "lon": -80.19719256525842}, {"address": "21 Hauser Court", "lat": 43.52213436927071, "lon": -80.19713976017306}, {"address": "17 Hauser Court", "lat": 43.52222453373054, "lon": -80.19674835632381}, {"address": "15 Hauser Court", "lat": 43.52217790179319, "lon": -80.1965790737069}, {"address": "13 Hauser Court", "lat": 43.52213469673148, "lon": -80.19642223485104}, {"address": "5 Hauser Court", "lat": 43.52230909158097, "lon": -80.1963270857348}, {"address": "3 Hauser Court", "lat": 43.52238347054661, "lon": -80.19622801862043}, {"address": "1 Hauser Court", "lat": 43.522469652372074, "lon": -80.19611323054791}, {"address": "19 Hauser Court", "lat": 43.522222417341744, "lon": -80.1969586421907}, {"address": "1 Jell Street", "lat": 43.52238645432076, "lon": -80.19546589022846}, {"address": "3 Jell Street", "lat": 43.52244515748289, "lon": -80.19539694559417}, {"address": "5 Jell Street", "lat": 43.52248071429715, "lon": -80.19534961399854}, {"address": "7 Jell Street", "lat": 43.5225162701734, "lon": -80.19530227988474}, {"address": "9 Jell Street", "lat": 43.522551838116954, "lon": -80.19525500000017}, {"address": "11 Jell Street", "lat": 43.52259312731609, "lon": -80.1951999164379}, {"address": "15 Jell Street", "lat": 43.52263931827185, "lon": -80.19513829354884}, {"address": "17 Jell Street", "lat": 43.52267965281772, "lon": -80.19508433989353}, {"address": "19 Jell Street", "lat": 43.522715053989906, "lon": -80.19503678974087}, {"address": "21 Jell Street", "lat": 43.52275054308422, "lon": -80.1949893249814}, {"address": "23 Jell Street", "lat": 43.522785994222005, "lon": -80.19494184334712}, {"address": "25 Jell Street", "lat": 43.5228272532085, "lon": -80.19488658280885}, {"address": "29 Jell Street", "lat": 43.522873457291546, "lon": -80.19482505825779}, {"address": "31 Jell Street", "lat": 43.5229139705124, "lon": -80.19477143714367}, {"address": "33 Jell Street", "lat": 43.52294962618056, "lon": -80.19472424332244}, {"address": "35 Jell Street", "lat": 43.52298528273765, "lon": -80.1946770506709}, {"address": "37 Jell Street", "lat": 43.52302681555071, "lon": -80.19462207815407}, {"address": "41 Jell Street", "lat": 43.523073165704886, "lon": -80.19456073067725}, {"address": "43 Jell Street", "lat": 43.523113638648475, "lon": -80.19450716171467}, {"address": "45 Jell Street", "lat": 43.52314929510424, "lon": -80.19445996757}, {"address": "47 Jell Street", "lat": 43.52318495064821, "lon": -80.19441277461898}, {"address": "49 Jell Street", "lat": 43.5232206070724, "lon": -80.1943655816004}, {"address": "51 Jell Street", "lat": 43.52326218702127, "lon": -80.19431054739334}, {"address": "55 Jell Street", "lat": 43.523308462126444, "lon": -80.19424866834741}, {"address": "57 Jell Street", "lat": 43.523349272961866, "lon": -80.19419528131799}, {"address": "59 Jell Street", "lat": 43.52338492751, "lon": -80.19414809054165}, {"address": "61 Jell Street", "lat": 43.52342058112897, "lon": -80.19410089848436}, {"address": "63 Jell Street", "lat": 43.52345623473651, "lon": -80.19405370760876}, {"address": "65 Jell Street", "lat": 43.52350977658779, "lon": -80.19397427143191}, {"address": "50 Jell Street", "lat": 43.52356203709511, "lon": -80.19462399952751}, {"address": "7 Hutchison Road", "lat": 43.523691884943744, "lon": -80.19706374442976}, {"address": "9 Hutchison Road", "lat": 43.523603911586804, "lon": -80.1971801201155}, {"address": "11 Hutchison Road", "lat": 43.5234747039045, "lon": -80.19725156832249}, {"address": "13 Hutchison Road", "lat": 43.52333299216198, "lon": -80.19724711436851}, {"address": "15 Hutchison Road", "lat": 43.52321099442793, "lon": -80.19720049526092}, {"address": "17 Hutchison Road", "lat": 43.523105091011345, "lon": -80.19709569143697}, {"address": "19 Hutchison Road", "lat": 43.523022819566705, "lon": -80.19698006148411}, {"address": "21 Hutchison Road", "lat": 43.522946582793956, "lon": -80.19687291464592}, {"address": "23 Hutchison Road", "lat": 43.52287034592193, "lon": -80.19676576807764}, {"address": "25 Hutchison Road", "lat": 43.52279717908453, "lon": -80.19666293546581}, {"address": "27 Hutchison Road", "lat": 43.52271179523579, "lon": -80.1965429341746}, {"address": "29 Hutchison Road", "lat": 43.52264161468506, "lon": -80.19644429932318}, {"address": "16 Hutchison Road", "lat": 43.523425474634706, "lon": -80.19676022024491}, {"address": "18 Hutchison Road", "lat": 43.5233486099447, "lon": -80.1966529278717}, {"address": "20 Hutchison Road", "lat": 43.523293429304324, "lon": -80.19657590222462}, {"address": "22 Hutchison Road", "lat": 43.52323640811174, "lon": -80.196496308765}, {"address": "24 Hutchison Road", "lat": 43.523177548171, "lon": -80.19641414872075}, {"address": "26 Hutchison Road", "lat": 43.52312052687573, "lon": -80.1963345568032}, {"address": "28 Hutchison Road", "lat": 43.523067184720055, "lon": -80.19626009846175}, {"address": "30 Hutchison Road", "lat": 43.52300464630503, "lon": -80.1961728042115}, {"address": "32 Hutchison Road", "lat": 43.522953143654526, "lon": -80.19610091409592}, {"address": "34 Hutchison Road", "lat": 43.52289244383026, "lon": -80.19601618812221}, {"address": "36 Hutchison Road", "lat": 43.52283542225227, "lon": -80.1959365957172}, {"address": "38 Hutchison Road", "lat": 43.52278391946357, "lon": -80.19586470724091}, {"address": "40 Hutchison Road", "lat": 43.52272505906521, "lon": -80.19578254718779}, {"address": "42 Hutchison Road", "lat": 43.52265884016108, "lon": -80.1956901193416}, {"address": "1 Elsegood Drive", "lat": 43.52364427809583, "lon": -80.19650061140693}, {"address": "3 Elsegood Drive", "lat": 43.523567351122345, "lon": -80.19639422807332}, {"address": "7 Elsegood Drive", "lat": 43.52351880590674, "lon": -80.19632148486143}, {"address": "9 Elsegood Drive", "lat": 43.523482504864404, "lon": -80.19626965986356}, {"address": "13 Elsegood Drive", "lat": 43.52343343553442, "lon": -80.19619960777038}, {"address": "15 Elsegood Drive", "lat": 43.52339878801501, "lon": -80.19615014546392}, {"address": "19 Elsegood Drive", "lat": 43.523346083117865, "lon": -80.19607490138681}, {"address": "21 Elsegood Drive", "lat": 43.52331149738579, "lon": -80.19602552625837}, {"address": "25 Elsegood Drive", "lat": 43.52326606339926, "lon": -80.19596066548723}, {"address": "27 Elsegood Drive", "lat": 43.52323329582399, "lon": -80.195913887181}, {"address": "31 Elsegood Drive", "lat": 43.52318061078936, "lon": -80.19583867294747}, {"address": "33 Elsegood Drive", "lat": 43.52314604587301, "lon": -80.19578932750908}, {"address": "37 Elsegood Drive", "lat": 43.523098834485815, "lon": -80.19572193050158}, {"address": "39 Elsegood Drive", "lat": 43.52306422858665, "lon": -80.19567252634472}, {"address": "43 Elsegood Drive", "lat": 43.52301323881715, "lon": -80.19559973388633}, {"address": "45 Elsegood Drive", "lat": 43.52297509832942, "lon": -80.19554528490227}, {"address": "49 Elsegood Drive", "lat": 43.52293330138682, "lon": -80.19548561569736}, {"address": "51 Elsegood Drive", "lat": 43.52288784708092, "lon": -80.19542072630527}, {"address": "2 Elsegood Drive", "lat": 43.52391674700108, "lon": -80.1961067858186}, {"address": "4 Elsegood Drive", "lat": 43.523848697177804, "lon": -80.19601721260157}, {"address": "8 Elsegood Drive", "lat": 43.52379868478542, "lon": -80.19593766197097}, {"address": "10 Elsegood Drive", "lat": 43.52376243416775, "lon": -80.19588573359042}, {"address": "14 Elsegood Drive", "lat": 43.52371519936592, "lon": -80.19581807133093}, {"address": "16 Elsegood Drive", "lat": 43.523682531548396, "lon": -80.19577127410932}, {"address": "20 Elsegood Drive", "lat": 43.523635320332055, "lon": -80.19570364636209}, {"address": "22 Elsegood Drive", "lat": 43.52359546308885, "lon": -80.19564655168965}, {"address": "26 Elsegood Drive", "lat": 43.52355178826571, "lon": -80.19558398768893}, {"address": "28 Elsegood Drive", "lat": 43.523515537489146, "lon": -80.19553205973217}, {"address": "32 Elsegood Drive", "lat": 43.52346653513625, "lon": -80.19546186500656}, {"address": "34 Elsegood Drive", "lat": 43.52342488588406, "lon": -80.19540220455377}, {"address": "38 Elsegood Drive", "lat": 43.523381187284755, "lon": -80.19533960780984}, {"address": "40 Elsegood Drive", "lat": 43.52334305081355, "lon": -80.19528497918365}, {"address": "44 Elsegood Drive", "lat": 43.52329770124652, "lon": -80.1952200188201}, {"address": "46 Elsegood Drive", "lat": 43.52326138025755, "lon": -80.19516798952536}, {"address": "50 Elsegood Drive", "lat": 43.52321053849054, "lon": -80.1950951618799}, {"address": "52 Elsegood Drive", "lat": 43.52317068094679, "lon": -80.19503806800908}, {"address": "31 Hutchison Road", "lat": 43.52256784462796, "lon": -80.19634062044923}, {"address": "12 Poole Street", "lat": 43.52454692241508, "lon": -80.19461346046528}, {"address": "46 Poole Street", "lat": 43.52394553649589, "lon": -80.19380632430321}, {"address": "220 Arkell Road", "lat": 43.521773722273245, "lon": -80.19370540463198}, {"address": "284 Arkell Road", "lat": 43.521209586056536, "lon": -80.19020639227735}, {"address": "74 Dawes Avenue", "lat": 43.52067421991585, "lon": -80.1932978797179}, {"address": "75 Dawes Avenue", "lat": 43.52041783230849, "lon": -80.19280511248023}, {"address": "9 Amos Drive", "lat": 43.52037500256531, "lon": -80.19141115351533}, {"address": "29 Amos Drive", "lat": 43.52074516969615, "lon": -80.1919433822306}, {"address": "31 Amos Drive", "lat": 43.52078212009335, "lon": -80.192000555141}, {"address": "33 Amos Drive", "lat": 43.52082070151981, "lon": -80.19205536278739}, {"address": "35 Amos Drive", "lat": 43.52085604518898, "lon": -80.19210611926796}, {"address": "37 Amos Drive", "lat": 43.52089688766239, "lon": -80.19216158361621}, {"address": "39 Amos Drive", "lat": 43.520929625998825, "lon": -80.19221751376577}, {"address": "92 Dawes Avenue", "lat": 43.521152486069546, "lon": -80.19264854439967}, {"address": "94 Dawes Avenue", "lat": 43.521192059771415, "lon": -80.19259233494643}, {"address": "96 Dawes Avenue", "lat": 43.52124885105865, "lon": -80.19251352284668}, {"address": "98 Dawes Avenue", "lat": 43.521289267547566, "lon": -80.19245732177127}, {"address": "15 Amos Drive", "lat": 43.52045459760653, "lon": -80.19155229246005}, {"address": "17 Amos Drive", "lat": 43.520494620197994, "lon": -80.19160904891993}, {"address": "19 Amos Drive", "lat": 43.520534697492344, "lon": -80.19165597143832}, {"address": "21 Amos Drive", "lat": 43.52057244829998, "lon": -80.19170929376536}, {"address": "23 Amos Drive", "lat": 43.52060954933319, "lon": -80.1917617747667}, {"address": "25 Amos Drive", "lat": 43.52064789299712, "lon": -80.19181808743569}, {"address": "27 Amos Drive", "lat": 43.520684987586954, "lon": -80.1918719569739}, {"address": "76 Dawes Avenue", "lat": 43.52079278382676, "lon": -80.19314002462477}, {"address": "80 Dawes Avenue", "lat": 43.520862532370025, "lon": -80.19304166496718}, {"address": "82 Dawes Avenue", "lat": 43.520907583657625, "lon": -80.19298062535682}, {"address": "84 Dawes Avenue", "lat": 43.520961280726304, "lon": -80.19290797278673}, {"address": "86 Dawes Avenue", "lat": 43.52100353697718, "lon": -80.19284718059212}, {"address": "88 Dawes Avenue", "lat": 43.521058165501785, "lon": -80.19277255908777}, {"address": "90 Dawes Avenue", "lat": 43.5210966069982, "lon": -80.19271909330126}, {"address": "100 Dawes Avenue", "lat": 43.52134658411239, "lon": -80.19238188415538}, {"address": "102 Dawes Avenue", "lat": 43.52138451532233, "lon": -80.19232848035303}, {"address": "104 Dawes Avenue", "lat": 43.52144291015851, "lon": -80.19225363071146}, {"address": "106 Dawes Avenue", "lat": 43.52148471663689, "lon": -80.19219894013293}, {"address": "108 Dawes Avenue", "lat": 43.52153404417194, "lon": -80.19211249944745}, {"address": "110 Dawes Avenue", "lat": 43.52157050814682, "lon": -80.19205815839564}, {"address": "112 Dawes Avenue", "lat": 43.52163672811833, "lon": -80.19199384777191}, {"address": "114 Dawes Avenue", "lat": 43.52167494598629, "lon": -80.19193898695598}, {"address": "116 Dawes Avenue", "lat": 43.52173620044422, "lon": -80.19186785138598}, {"address": "118 Dawes Avenue", "lat": 43.5217773450677, "lon": -80.19180999645697}, {"address": "120 Dawes Avenue", "lat": 43.52184418858701, "lon": -80.19171290982203}, {"address": "14 Amos Drive 1", "lat": 43.520492780845856, "lon": -80.19088835488463}, {"address": "14 Amos Drive 2", "lat": 43.52053084836067, "lon": -80.19083128032015}, {"address": "14 Amos Drive 3", "lat": 43.52057086945754, "lon": -80.19077505314745}, {"address": "14 Amos Drive 4", "lat": 43.520609262795254, "lon": -80.19072343826278}, {"address": "14 Amos Drive 6", "lat": 43.52070343795162, "lon": -80.19059166128967}, {"address": "14 Amos Drive 5", "lat": 43.52066461275349, "lon": -80.19064293441382}, {"address": "14 Amos Drive 7", "lat": 43.520745656914805, "lon": -80.19053620498477}, {"address": "14 Amos Drive 8", "lat": 43.52078563576424, "lon": -80.19048051747085}, {"address": "14 Amos Drive 10", "lat": 43.52086607547008, "lon": -80.19037338983625}, {"address": "14 Amos Drive 9", "lat": 43.52082639425329, "lon": -80.1904265963127}, {"address": "14 Amos Drive 11", "lat": 43.52108339564317, "lon": -80.19079662502084}, {"address": "14 Amos Drive 16", "lat": 43.52127464187944, "lon": -80.19106207647961}, {"address": "14 Amos Drive 13", "lat": 43.52116146471412, "lon": -80.19090257455652}, {"address": "14 Amos Drive 12", "lat": 43.521120373732124, "lon": -80.19084592502752}, {"address": "14 Amos Drive 14", "lat": 43.52119964875092, "lon": -80.19095459316702}, {"address": "14 Amos Drive 15", "lat": 43.52123719042972, "lon": -80.19100732820343}, {"address": "14 Amos Drive 17", "lat": 43.52133393265344, "lon": -80.19114133373314}, {"address": "14 Amos Drive 18", "lat": 43.5213704793283, "lon": -80.19119662138803}, {"address": "14 Amos Drive 19", "lat": 43.52140867210924, "lon": -80.19125409583623}, {"address": "14 Amos Drive 20", "lat": 43.52144543875114, "lon": -80.19130700987462}, {"address": "14 Amos Drive 21", "lat": 43.52148474908436, "lon": -80.19136565618139}, {"address": "14 Amos Drive 22", "lat": 43.5215223886329, "lon": -80.19142067090002}, {"address": "14 Amos Drive 23", "lat": 43.520944916601536, "lon": -80.1910946965204}, {"address": "14 Amos Drive 24", "lat": 43.520905887838026, "lon": -80.19114917331407}, {"address": "14 Amos Drive 25", "lat": 43.520866312313785, "lon": -80.19120438862406}, {"address": "14 Amos Drive 26", "lat": 43.52082832800625, "lon": -80.19125441289818}, {"address": "14 Amos Drive 27", "lat": 43.52079100020097, "lon": -80.1913081453799}, {"address": "14 Amos Drive 28", "lat": 43.52100856407874, "lon": -80.19155085683406}, {"address": "14 Amos Drive 29", "lat": 43.52104596186609, "lon": -80.1916000897692}, {"address": "14 Amos Drive 30", "lat": 43.52108483370796, "lon": -80.19165697601174}, {"address": "14 Amos Drive 31", "lat": 43.52112065690203, "lon": -80.19170841529177}, {"address": "14 Amos Drive 32", "lat": 43.521160100476514, "lon": -80.19176988963677}, {"address": "14 Amos Drive 33", "lat": 43.52119480377191, "lon": -80.19182264199945}, {"address": "9 Amos Drive 1", "lat": 43.52025721840407, "lon": -80.19118800725343}, {"address": "9 Amos Drive 2", "lat": 43.520214199107784, "lon": -80.19124047400214}, {"address": "9 Amos Drive 3", "lat": 43.520176449143136, "lon": -80.19129155251345}, {"address": "9 Amos Drive 4", "lat": 43.52013409875904, "lon": -80.19134541210113}, {"address": "9 Amos Drive 5", "lat": 43.52009466845315, "lon": -80.19139991315619}, {"address": "9 Amos Drive 6", "lat": 43.5200424155984, "lon": -80.19148095326804}, {"address": "9 Amos Drive 7", "lat": 43.52000206027054, "lon": -80.1915321120548}, {"address": "9 Amos Drive 8", "lat": 43.519963417417245, "lon": -80.19158554813467}, {"address": "9 Amos Drive 9", "lat": 43.519922904177136, "lon": -80.19163692047869}, {"address": "9 Amos Drive 10", "lat": 43.52033530799984, "lon": -80.19192397177942}, {"address": "9 Amos Drive 11", "lat": 43.5203719464856, "lon": -80.19197650466438}, {"address": "9 Amos Drive 12", "lat": 43.52041276544648, "lon": -80.19203207273809}, {"address": "9 Amos Drive 13", "lat": 43.52044808619566, "lon": -80.19208136785444}, {"address": "9 Amos Drive 14", "lat": 43.52048667526624, "lon": -80.19213522362342}, {"address": "9 Amos Drive 15", "lat": 43.520541565925775, "lon": -80.19222162967972}, {"address": "9 Amos Drive 16", "lat": 43.520580538737526, "lon": -80.19227322355779}, {"address": "9 Amos Drive 17", "lat": 43.52061926688829, "lon": -80.19232447430504}, {"address": "9 Amos Drive 18", "lat": 43.52065460839213, "lon": -80.19237659808823}, {"address": "9 Amos Drive 19", "lat": 43.520693924859536, "lon": -80.19243007084171}, {"address": "9 Amos Drive 20", "lat": 43.520732216435746, "lon": -80.19248071263824}, {"address": "348 Arkell Road", "lat": 43.52247029307443, "lon": -80.18857142595523}, {"address": "88 Decorso Drive 1", "lat": 43.525538373725844, "lon": -80.19213915840922}, {"address": "88 Decorso Drive 2", "lat": 43.525491203736195, "lon": -80.19220598953972}, {"address": "88 Decorso Drive 3", "lat": 43.525452654171275, "lon": -80.19226298282517}, {"address": "88 Decorso Drive 4", "lat": 43.5254151430849, "lon": -80.19231505071073}, {"address": "88 Decorso Drive 5", "lat": 43.52536558946577, "lon": -80.19238250363537}, {"address": "88 Decorso Drive 6", "lat": 43.52528059233938, "lon": -80.19258711116711}, {"address": "88 Decorso Drive 7", "lat": 43.525230439890784, "lon": -80.19251700639165}, {"address": "88 Decorso Drive 8", "lat": 43.52519145401485, "lon": -80.19246571055061}, {"address": "88 Decorso Drive 9", "lat": 43.525156102264965, "lon": -80.19240804785876}, {"address": "88 Decorso Drive 10", "lat": 43.525117117232284, "lon": -80.19235675090157}, {"address": "88 Decorso Drive 11", "lat": 43.525081765428055, "lon": -80.19229908834434}, {"address": "88 Decorso Drive 12", "lat": 43.52501780089644, "lon": -80.19222664147192}, {"address": "88 Decorso Drive 13", "lat": 43.524937607178806, "lon": -80.1923300794869}, {"address": "88 Decorso Drive 14", "lat": 43.52499797410044, "lon": -80.19241394776847}, {"address": "88 Decorso Drive 15", "lat": 43.52503606663288, "lon": -80.19246904687895}, {"address": "88 Decorso Drive 16", "lat": 43.52507140050751, "lon": -80.19252418285669}, {"address": "88 Decorso Drive 17", "lat": 43.525111322553165, "lon": -80.19257799426188}, {"address": "88 Decorso Drive 18", "lat": 43.52514296064944, "lon": -80.19263065154801}, {"address": "88 Decorso Drive 19", "lat": 43.52519312284975, "lon": -80.19270201962748}, {"address": "88 Decorso Drive 20", "lat": 43.52506741781809, "lon": -80.19287178149423}, {"address": "88 Decorso Drive 21", "lat": 43.52502366546346, "lon": -80.19279653640103}, {"address": "88 Decorso Drive 22", "lat": 43.52498279661567, "lon": -80.19273894724788}, {"address": "88 Decorso Drive 23", "lat": 43.52494315864656, "lon": -80.19269232906052}, {"address": "88 Decorso Drive 24", "lat": 43.524904777205435, "lon": -80.19264564838984}, {"address": "88 Decorso Drive 25", "lat": 43.52486864327276, "lon": -80.19258916073362}, {"address": "88 Decorso Drive 26", "lat": 43.52480514436737, "lon": -80.19250357211062}, {"address": "88 Decorso Drive 27", "lat": 43.52472590117877, "lon": -80.19261758428377}, {"address": "88 Decorso Drive 28", "lat": 43.52478436999801, "lon": -80.19269931234659}, {"address": "88 Decorso Drive 29", "lat": 43.52481906116904, "lon": -80.19275385416636}, {"address": "88 Decorso Drive 30", "lat": 43.52485658314767, "lon": -80.19280442940833}, {"address": "88 Decorso Drive 31", "lat": 43.524896263569104, "lon": -80.19285693976187}, {"address": "88 Decorso Drive 32", "lat": 43.52493166260665, "lon": -80.19291049103781}, {"address": "88 Decorso Drive 33", "lat": 43.52498436464636, "lon": -80.19298542003281}, {"address": "88 Decorso Drive 34", "lat": 43.52483084661762, "lon": -80.19320846709849}, {"address": "88 Decorso Drive 35", "lat": 43.52478320937641, "lon": -80.1931423108963}, {"address": "88 Decorso Drive 36", "lat": 43.52475064128978, "lon": -80.19308479299285}, {"address": "88 Decorso Drive 37", "lat": 43.52471168276473, "lon": -80.19303325428416}, {"address": "88 Decorso Drive 38", "lat": 43.52467409849176, "lon": -80.1929738395585}, {"address": "88 Decorso Drive 39", "lat": 43.52463295462176, "lon": -80.19291643742272}, {"address": "88 Decorso Drive 40", "lat": 43.524579572340336, "lon": -80.19284642939154}, {"address": "88 Decorso Drive 41", "lat": 43.52454055823647, "lon": -80.19278703397671}, {"address": "88 Decorso Drive 42", "lat": 43.524499393472105, "lon": -80.19272668602902}, {"address": "88 Decorso Drive 43", "lat": 43.52446546569912, "lon": -80.19267900953798}, {"address": "88 Decorso Drive 44", "lat": 43.52442576528422, "lon": -80.1926235523606}, {"address": "88 Decorso Drive 45", "lat": 43.52438172105059, "lon": -80.19256029546983}, {"address": "88 Decorso Drive 46", "lat": 43.52455931381911, "lon": -80.19240666442577}, {"address": "88 Decorso Drive 47", "lat": 43.52461168351177, "lon": -80.19233328216039}, {"address": "88 Decorso Drive 48", "lat": 43.52465633891979, "lon": -80.19228062839338}, {"address": "88 Decorso Drive 49", "lat": 43.524698821944924, "lon": -80.19222407465358}, {"address": "88 Decorso Drive 50", "lat": 43.5247441357521, "lon": -80.19216355417183}, {"address": "88 Decorso Drive 51", "lat": 43.52479720626627, "lon": -80.19208819705327}, {"address": "88 Decorso Drive 52", "lat": 43.52484610037795, "lon": -80.19202861111549}, {"address": "88 Decorso Drive 53", "lat": 43.52488999218745, "lon": -80.19196909185301}, {"address": "88 Decorso Drive 54", "lat": 43.52493320380821, "lon": -80.19191449301547}, {"address": "88 Decorso Drive 55", "lat": 43.52497496483457, "lon": -80.19185696586166}, {"address": "88 Decorso Drive 56", "lat": 43.525020278440905, "lon": -80.1917964448288}, {"address": "88 Decorso Drive 57", "lat": 43.52506768016949, "lon": -80.19172803801062}, {"address": "88 Decorso Drive 58", "lat": 43.525119397933864, "lon": -80.19166350236065}, {"address": "88 Decorso Drive 59", "lat": 43.525167542233895, "lon": -80.19159901555909}, {"address": "88 Decorso Drive 60", "lat": 43.52521499335339, "lon": -80.19153748305256}, {"address": "88 Decorso Drive 61", "lat": 43.52525388172928, "lon": -80.19147802989617}, {"address": "88 Decorso Drive 62", "lat": 43.52529708615937, "lon": -80.19142244793257}, {"address": "88 Decorso Drive 63", "lat": 43.52534307966061, "lon": -80.19135700570172}, {"address": "88 Decorso Drive 64", "lat": 43.52539187612318, "lon": -80.19128366930644}, {"address": "88 Decorso Drive 65", "lat": 43.525440728110404, "lon": -80.19121818867463}, {"address": "88 Decorso Drive 66", "lat": 43.525484646376626, "lon": -80.19116259681397}, {"address": "88 Decorso Drive 67", "lat": 43.52552783674647, "lon": -80.19110504951198}, {"address": "88 Decorso Drive 68", "lat": 43.52557173501076, "lon": -80.19104651136055}, {"address": "88 Decorso Drive 69", "lat": 43.52562914776476, "lon": -80.19097895207383}, {"address": "88 Decorso Drive 70", "lat": 43.52576143648466, "lon": -80.19073615924887}, {"address": "88 Decorso Drive 71", "lat": 43.52580235967243, "lon": -80.19079988488556}, {"address": "88 Decorso Drive 72", "lat": 43.52584057577816, "lon": -80.19086241180187}, {"address": "88 Decorso Drive 73", "lat": 43.5258923593961, "lon": -80.19093588105113}, {"address": "88 Decorso Drive 74", "lat": 43.525933273735845, "lon": -80.19099837208418}, {"address": "88 Decorso Drive 75", "lat": 43.525971393535826, "lon": -80.19104730323363}, {"address": "88 Decorso Drive 76", "lat": 43.52601873322058, "lon": -80.19112824834154}, {"address": "88 Decorso Drive 77", "lat": 43.52560864424215, "lon": -80.191422400825}, {"address": "88 Decorso Drive 78", "lat": 43.5255538074129, "lon": -80.19151390972878}, {"address": "88 Decorso Drive 79", "lat": 43.525515897845715, "lon": -80.19157069821067}, {"address": "88 Decorso Drive 80", "lat": 43.52547716468361, "lon": -80.19161836269524}, {"address": "88 Decorso Drive 81", "lat": 43.525427042623015, "lon": -80.19167272782948}, {"address": "88 Decorso Drive 82", "lat": 43.52537611609862, "lon": -80.19174805747753}, {"address": "88 Decorso Drive 83", "lat": 43.52532982361482, "lon": -80.19180499097779}, {"address": "88 Decorso Drive 84", "lat": 43.52529016466392, "lon": -80.19185659644492}, {"address": "88 Decorso Drive 85", "lat": 43.525250524194384, "lon": -80.19191082005136}, {"address": "88 Decorso Drive 86", "lat": 43.52521180849803, "lon": -80.1919611035636}, {"address": "88 Decorso Drive 87", "lat": 43.52515421208455, "lon": -80.19203652172358}, {"address": "88 Decorso Drive 88", "lat": 43.525231218186505, "lon": -80.19214550481932}, {"address": "88 Decorso Drive 89", "lat": 43.525288796160595, "lon": -80.19206746721885}, {"address": "88 Decorso Drive 90", "lat": 43.52532271030751, "lon": -80.19201200964771}, {"address": "88 Decorso Drive 91", "lat": 43.52535949224747, "lon": -80.19195782296221}, {"address": "88 Decorso Drive 92", "lat": 43.52540012320549, "lon": -80.19190882298618}, {"address": "88 Decorso Drive 93", "lat": 43.52544639633334, "lon": -80.19184927129426}, {"address": "88 Decorso Drive 94", "lat": 43.52550402128805, "lon": -80.19177778114187}, {"address": "88 Decorso Drive 95", "lat": 43.52555028509025, "lon": -80.19171692013747}, {"address": "88 Decorso Drive 96", "lat": 43.525592784021946, "lon": -80.19166265672426}, {"address": "88 Decorso Drive 97", "lat": 43.52562193428699, "lon": -80.19160726226518}, {"address": "88 Decorso Drive 98", "lat": 43.525679530404815, "lon": -80.19153184311159}, {"address": "14 Amos Drive", "lat": 43.52069042054088, "lon": -80.19105895657081}, {"address": "88 Decorso Drive", "lat": 43.52505152182995, "lon": -80.1920776937158}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 310;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

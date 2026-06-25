@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 42 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 42</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 231</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "42";
+const ZONE_NAME = "Zone 42";
+const ZONE_POLYGON = [[43.520279, -80.248695], [43.518821, -80.246917], [43.520759, -80.244271], [43.522092, -80.246101], [43.520279, -80.248695]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.52047772024103, -80.24649676733415];     // [lat, lon]
+const ADDRESSES = [{"address": "264 College Avenue West 9", "lat": 43.52154081937697, "lon": -80.24557040878653}, {"address": "264 College Avenue West 2", "lat": 43.52178567294381, "lon": -80.24589959289356}, {"address": "264 College Avenue West 16", "lat": 43.521142566085715, "lon": -80.24503119156385}, {"address": "264 College Avenue West 11", "lat": 43.52130373721, "lon": -80.24524775782669}, {"address": "264 College Avenue West 20", "lat": 43.52090248869773, "lon": -80.24468703839521}, {"address": "264 College Avenue West 8", "lat": 43.52158427631371, "lon": -80.24561814613512}, {"address": "264 College Avenue West 23", "lat": 43.520809535268874, "lon": -80.24455714379455}, {"address": "264 College Avenue West 7", "lat": 43.521619907726176, "lon": -80.2456679410673}, {"address": "264 College Avenue West 3", "lat": 43.52175623784262, "lon": -80.24585845891038}, {"address": "264 College Avenue West 15", "lat": 43.52117819774313, "lon": -80.2450809845501}, {"address": "264 College Avenue West 13", "lat": 43.52124491967262, "lon": -80.2451569019164}, {"address": "264 College Avenue West 22", "lat": 43.520842068986404, "lon": -80.24460260698312}, {"address": "264 College Avenue West 18", "lat": 43.520962934917094, "lon": -80.24476717721545}, {"address": "264 College Avenue West 19", "lat": 43.5209366241122, "lon": -80.24472607960362}, {"address": "264 College Avenue West 14", "lat": 43.52120760745507, "lon": -80.24512641300365}, {"address": "264 College Avenue West 12", "lat": 43.52127430187654, "lon": -80.24520662448786}, {"address": "264 College Avenue West 4", "lat": 43.521723704619646, "lon": -80.2458129943603}, {"address": "264 College Avenue West 10", "lat": 43.52148814604782, "lon": -80.24549680017357}, {"address": "264 College Avenue West 5", "lat": 43.521688046671144, "lon": -80.2457674933065}, {"address": "264 College Avenue West 24", "lat": 43.520777000633046, "lon": -80.24451168066608}, {"address": "264 College Avenue West 21", "lat": 43.52087305316449, "lon": -80.24464590560173}, {"address": "264 College Avenue West 17", "lat": 43.52099391903346, "lon": -80.24481047600473}, {"address": "264 College Avenue West 6", "lat": 43.521652415309816, "lon": -80.2457176994969}, {"address": "278 College Avenue West", "lat": 43.52144099931546, "lon": -80.24643985742512}, {"address": "302 College Avenue West 177", "lat": 43.51954356380677, "lon": -80.24672712052738}, {"address": "302 College Avenue West 1", "lat": 43.52167719595386, "lon": -80.24631111159866}, {"address": "302 College Avenue West 102", "lat": 43.52131036954031, "lon": -80.24672952938457}, {"address": "302 College Avenue West 86", "lat": 43.52054687097123, "lon": -80.24638200097026}, {"address": "302 College Avenue West 24", "lat": 43.52090420068363, "lon": -80.24573266855027}, {"address": "302 College Avenue West 79", "lat": 43.5208064387063, "lon": -80.24602529700039}, {"address": "302 College Avenue West 83", "lat": 43.520663403373845, "lon": -80.24623047331352}, {"address": "302 College Avenue West 12", "lat": 43.52123818437253, "lon": -80.24569155597077}, {"address": "302 College Avenue West 3", "lat": 43.52159713586662, "lon": -80.24620527404795}, {"address": "302 College Avenue West 4", "lat": 43.52156044181806, "lon": -80.24614190314144}, {"address": "302 College Avenue West 89", "lat": 43.52102616576015, "lon": -80.2464774558879}, {"address": "302 College Avenue West 108", "lat": 43.521079392938, "lon": -80.24704759725566}, {"address": "302 College Avenue West 109", "lat": 43.521020081375895, "lon": -80.24711585440569}, {"address": "302 College Avenue West", "lat": 43.52054687097123, "lon": -80.24638200097026}, {"address": "302 College Avenue West 39", "lat": 43.52059737266295, "lon": -80.24525552909715}, {"address": "302 College Avenue West 25", "lat": 43.52097644650475, "lon": -80.24533183627062}, {"address": "302 College Avenue West 55", "lat": 43.52034340841195, "lon": -80.24505177333421}, {"address": "302 College Avenue West 59", "lat": 43.5201981758077, "lon": -80.24525992388682}, {"address": "302 College Avenue West 64", "lat": 43.520399281857095, "lon": -80.24554700037677}, {"address": "302 College Avenue West 72", "lat": 43.52057883175092, "lon": -80.24579186623625}, {"address": "302 College Avenue West 73", "lat": 43.52053704284286, "lon": -80.24584833523683}, {"address": "302 College Avenue West 74", "lat": 43.52049532701405, "lon": -80.24589281695924}, {"address": "302 College Avenue West 75", "lat": 43.52046237302832, "lon": -80.24593140484707}, {"address": "302 College Avenue West 77", "lat": 43.5203875560238, "lon": -80.24603845109547}, {"address": "302 College Avenue West 26", "lat": 43.52093960500771, "lon": -80.24529244360656}, {"address": "302 College Avenue West 27", "lat": 43.52090503645652, "lon": -80.2452380913519}, {"address": "302 College Avenue West 29", "lat": 43.520831574237256, "lon": -80.24512333950706}, {"address": "302 College Avenue West 31", "lat": 43.52075151306104, "lon": -80.24501750500514}, {"address": "302 College Avenue West 32", "lat": 43.52071910644228, "lon": -80.2449661749758}, {"address": "302 College Avenue West 33", "lat": 43.52081585448541, "lon": -80.24555479797814}, {"address": "302 College Avenue West 34", "lat": 43.52077468716819, "lon": -80.24550936145924}, {"address": "302 College Avenue West 36", "lat": 43.5207012252271, "lon": -80.24539461076358}, {"address": "302 College Avenue West 35", "lat": 43.520737956662074, "lon": -80.24545198607093}, {"address": "302 College Avenue West 40", "lat": 43.52056943901483, "lon": -80.24518626593185}, {"address": "302 College Avenue West 41", "lat": 43.520592011171054, "lon": -80.24470393124506}, {"address": "302 College Avenue West 45", "lat": 43.520442417235365, "lon": -80.24491203271198}, {"address": "302 College Avenue West 28", "lat": 43.52086614285065, "lon": -80.24517769286733}, {"address": "302 College Avenue West 5", "lat": 43.52151934874312, "lon": -80.24608447577947}, {"address": "302 College Avenue West 30", "lat": 43.52079044370741, "lon": -80.24507190901882}, {"address": "302 College Avenue West 14", "lat": 43.52122022554274, "lon": -80.24613198386098}, {"address": "302 College Avenue West 15", "lat": 43.52118565827921, "lon": -80.24607762962323}, {"address": "302 College Avenue West 18", "lat": 43.52107326487572, "lon": -80.24590847260174}, {"address": "302 College Avenue West 66", "lat": 43.52033318917327, "lon": -80.245654147401}, {"address": "302 College Avenue West 69", "lat": 43.52021665843022, "lon": -80.24580567531}, {"address": "302 College Avenue West 95", "lat": 43.520915388214135, "lon": -80.24675794251996}, {"address": "302 College Avenue West 100", "lat": 43.520722899852096, "lon": -80.24648894403354}, {"address": "302 College Avenue West 110", "lat": 43.52098708991222, "lon": -80.24716043624511}, {"address": "302 College Avenue West 2", "lat": 43.5216448278205, "lon": -80.24625378450415}, {"address": "302 College Avenue West 38", "lat": 43.52063414113617, "lon": -80.24530690998363}, {"address": "302 College Avenue West 37", "lat": 43.52066878270551, "lon": -80.24534927480256}, {"address": "302 College Avenue West 23", "lat": 43.52092641383987, "lon": -80.245666979639}, {"address": "302 College Avenue West 22", "lat": 43.52097256461866, "lon": -80.2456105584976}, {"address": "302 College Avenue West 62", "lat": 43.52008596969585, "lon": -80.24541749721118}, {"address": "302 College Avenue West 60", "lat": 43.52016074914336, "lon": -80.24531644369574}, {"address": "302 College Avenue West 88", "lat": 43.52107385580077, "lon": -80.24652596613126}, {"address": "302 College Avenue West 87", "lat": 43.521108423753375, "lon": -80.24658032051727}, {"address": "302 College Avenue West 90", "lat": 43.521006882751166, "lon": -80.24642028073765}, {"address": "302 College Avenue West 107", "lat": 43.52112121857691, "lon": -80.24698513181384}, {"address": "302 College Avenue West 104", "lat": 43.52123991468663, "lon": -80.2468366270726}, {"address": "302 College Avenue West 106", "lat": 43.52115208321308, "lon": -80.24693153352109}, {"address": "302 College Avenue West 6", "lat": 43.52148041857394, "lon": -80.24603007045945}, {"address": "302 College Avenue West 7", "lat": 43.52143071069376, "lon": -80.24595455985698}, {"address": "302 College Avenue West 8", "lat": 43.521396105446456, "lon": -80.24590619985915}, {"address": "302 College Avenue West 9", "lat": 43.5213484873405, "lon": -80.24584570125775}, {"address": "302 College Avenue West 10", "lat": 43.52131604498798, "lon": -80.24580036333535}, {"address": "302 College Avenue West 11", "lat": 43.521272788801234, "lon": -80.2457399144937}, {"address": "302 College Avenue West 13", "lat": 43.52125043169817, "lon": -80.24618628728366}, {"address": "302 College Avenue West 16", "lat": 43.52114889014903, "lon": -80.24602624780046}, {"address": "302 College Avenue West 17", "lat": 43.521109923857196, "lon": -80.24597783835915}, {"address": "302 College Avenue West 19", "lat": 43.52107597306214, "lon": -80.24546487260872}, {"address": "302 College Avenue West 20", "lat": 43.52104074624297, "lon": -80.2455184220023}, {"address": "302 College Avenue West 21", "lat": 43.521007718426546, "lon": -80.245568998994}, {"address": "302 College Avenue West 42", "lat": 43.52055458568969, "lon": -80.24476045175369}, {"address": "302 College Avenue West 43", "lat": 43.52051070731529, "lon": -80.24480191112372}, {"address": "302 College Avenue West 44", "lat": 43.52048204179575, "lon": -80.2448525388251}, {"address": "302 College Avenue West 46", "lat": 43.52040286472862, "lon": -80.24495953563888}, {"address": "302 College Avenue West 56", "lat": 43.520306055770334, "lon": -80.2450963049962}, {"address": "302 College Avenue West 57", "lat": 43.52026862919725, "lon": -80.24515282624404}, {"address": "302 College Avenue West 58", "lat": 43.52023336555119, "lon": -80.24521236929488}, {"address": "302 College Avenue West 61", "lat": 43.520123433375446, "lon": -80.24535498210977}, {"address": "302 College Avenue West 63", "lat": 43.52044319567758, "lon": -80.24549954618651}, {"address": "302 College Avenue West 65", "lat": 43.520361928120664, "lon": -80.2455915317887}, {"address": "302 College Avenue West 67", "lat": 43.52029576322256, "lon": -80.24571066832216}, {"address": "302 College Avenue West 68", "lat": 43.520256210386435, "lon": -80.24575817185276}, {"address": "302 College Avenue West 70", "lat": 43.52018143143911, "lon": -80.2458592237405}, {"address": "302 College Avenue West 71", "lat": 43.52060976889555, "lon": -80.24572627689233}, {"address": "302 College Avenue West 76", "lat": 43.520429308916356, "lon": -80.24598797533503}, {"address": "302 College Avenue West 78", "lat": 43.520350202993924, "lon": -80.2460829821869}, {"address": "302 College Avenue West 80", "lat": 43.52077564670344, "lon": -80.24606690572176}, {"address": "302 College Avenue West 81", "lat": 43.52073173174856, "lon": -80.2461143597789}, {"address": "302 College Avenue West 82", "lat": 43.52069426855922, "lon": -80.24617687503824}, {"address": "302 College Avenue West 84", "lat": 43.5206216512765, "lon": -80.24628094909441}, {"address": "302 College Avenue West 85", "lat": 43.52058429815387, "lon": -80.24632548021171}, {"address": "302 College Avenue West 91", "lat": 43.52097440450782, "lon": -80.24638093825536}, {"address": "302 College Avenue West 92", "lat": 43.520928912554446, "lon": -80.24632945590851}, {"address": "302 College Avenue West 93", "lat": 43.52089438060278, "lon": -80.24626910757448}, {"address": "302 College Avenue West 94", "lat": 43.52094346730723, "lon": -80.24680322976437}, {"address": "302 College Avenue West 96", "lat": 43.52086776965317, "lon": -80.24669744372875}, {"address": "302 College Avenue West 97", "lat": 43.52083976369628, "lon": -80.24664016808426}, {"address": "302 College Avenue West 98", "lat": 43.52080728462723, "lon": -80.24660082560153}, {"address": "302 College Avenue West 99", "lat": 43.520759593716924, "lon": -80.24655231552066}, {"address": "302 College Avenue West 101", "lat": 43.521349958911394, "lon": -80.24667603134847}, {"address": "302 College Avenue West 103", "lat": 43.52127946706322, "lon": -80.24678912347082}, {"address": "302 College Avenue West 105", "lat": 43.521198198477194, "lon": -80.24688110864248}, {"address": "302 College Avenue West 111", "lat": 43.52094086422172, "lon": -80.2472288447665}, {"address": "302 College Avenue West 112", "lat": 43.5209035107294, "lon": -80.2472733755416}, {"address": "302 College Avenue West 113", "lat": 43.52072513592431, "lon": -80.24755008241648}, {"address": "302 College Avenue West 114", "lat": 43.520685545231345, "lon": -80.24760357934011}, {"address": "302 College Avenue West 115", "lat": 43.520654643187875, "lon": -80.24766317235586}, {"address": "302 College Avenue West 116", "lat": 43.52061945151921, "lon": -80.24771072588287}, {"address": "302 College Avenue West 117", "lat": 43.52056681190412, "lon": -80.2477580766743}, {"address": "302 College Avenue West 118", "lat": 43.520531583994654, "lon": -80.24781162429394}, {"address": "302 College Avenue West 119", "lat": 43.52047223485661, "lon": -80.24788587429904}, {"address": "302 College Avenue West 120", "lat": 43.52042831912487, "lon": -80.24793332556908}, {"address": "302 College Avenue West 121", "lat": 43.520397379803065, "lon": -80.24799891361602}, {"address": "302 College Avenue West 122", "lat": 43.52036002600087, "lon": -80.24804344351575}, {"address": "302 College Avenue West 123", "lat": 43.52032039885452, "lon": -80.2481029339901}, {"address": "302 College Avenue West 124", "lat": 43.52028300790023, "lon": -80.24815345920975}, {"address": "302 College Avenue West 125", "lat": 43.52009814613338, "lon": -80.24806439382607}, {"address": "302 College Avenue West 126", "lat": 43.52005701781162, "lon": -80.24801296192645}, {"address": "302 College Avenue West 127", "lat": 43.52002461252633, "lon": -80.24796163085884}, {"address": "302 College Avenue West 128", "lat": 43.5199878832323, "lon": -80.24790425343308}, {"address": "302 College Avenue West 129", "lat": 43.519946791041605, "lon": -80.24784682757682}, {"address": "302 College Avenue West 130", "lat": 43.519912149486224, "lon": -80.24780446182668}, {"address": "302 College Avenue West 131", "lat": 43.520370220747964, "lon": -80.24744706362317}, {"address": "302 College Avenue West 132", "lat": 43.5203284310192, "lon": -80.24750353253327}, {"address": "302 College Avenue West 133", "lat": 43.52028667834891, "lon": -80.24755400716151}, {"address": "302 College Avenue West 134", "lat": 43.52025797540912, "lon": -80.24761062757774}, {"address": "302 College Avenue West 135", "lat": 43.52022278374967, "lon": -80.247658179583}, {"address": "302 College Avenue West 136", "lat": 43.520187666259304, "lon": -80.2476937431448}, {"address": "302 College Avenue West 137", "lat": 43.52069790057622, "lon": -80.24701021939579}, {"address": "302 College Avenue West 138", "lat": 43.52065611197043, "lon": -80.24706668890198}, {"address": "302 College Avenue West 139", "lat": 43.52061652150504, "lon": -80.24712018607696}, {"address": "302 College Avenue West 140", "lat": 43.52058133006407, "lon": -80.24716773988621}, {"address": "302 College Avenue West 141", "lat": 43.52054610333416, "lon": -80.2472212878473}, {"address": "302 College Avenue West 142", "lat": 43.520504349892434, "lon": -80.24727176286324}, {"address": "302 College Avenue West 143", "lat": 43.52047344801274, "lon": -80.24733135462905}, {"address": "302 College Avenue West 144", "lat": 43.520427369615014, "lon": -80.24737578433842}, {"address": "302 College Avenue West 145", "lat": 43.52019481681014, "lon": -80.24688151325904}, {"address": "302 College Avenue West 146", "lat": 43.520155190279816, "lon": -80.24694100555895}, {"address": "302 College Avenue West 147", "lat": 43.52012216271006, "lon": -80.24699157978836}, {"address": "302 College Avenue West 148", "lat": 43.52007608354938, "lon": -80.24703601074143}, {"address": "302 College Avenue West 149", "lat": 43.52004305594443, "lon": -80.24708658609015}, {"address": "302 College Avenue West 150", "lat": 43.52000562926703, "lon": -80.24714310462504}, {"address": "302 College Avenue West 151", "lat": 43.519970400740796, "lon": -80.24719665210887}, {"address": "302 College Avenue West 152", "lat": 43.51993949890195, "lon": -80.24725624462043}, {"address": "302 College Avenue West 153", "lat": 43.51980855765851, "lon": -80.24762341746944}, {"address": "302 College Avenue West 154", "lat": 43.519769591133866, "lon": -80.24757500806179}, {"address": "302 College Avenue West 155", "lat": 43.519728425508056, "lon": -80.24752957092227}, {"address": "302 College Avenue West 156", "lat": 43.51968293406346, "lon": -80.24747808875173}, {"address": "302 College Avenue West 157", "lat": 43.519654927597095, "lon": -80.24742081386523}, {"address": "302 College Avenue West 158", "lat": 43.519615960987494, "lon": -80.24737240471062}, {"address": "302 College Avenue West 159", "lat": 43.51955753001819, "lon": -80.24729679340538}, {"address": "302 College Avenue West 160", "lat": 43.51951863659873, "lon": -80.24723639616398}, {"address": "302 College Avenue West 161", "lat": 43.519481833716114, "lon": -80.24719100913278}, {"address": "302 College Avenue West 162", "lat": 43.51944506608106, "lon": -80.2471396280586}, {"address": "302 College Avenue West 163", "lat": 43.51941273452522, "lon": -80.24707630850637}, {"address": "302 College Avenue West 164", "lat": 43.519371568703086, "lon": -80.24703087197312}, {"address": "302 College Avenue West 165", "lat": 43.519334838054206, "lon": -80.2469734969803}, {"address": "302 College Avenue West 166", "lat": 43.51929807032232, "lon": -80.2469221161631}, {"address": "302 College Avenue West 167", "lat": 43.51985317039852, "lon": -80.24674867872316}, {"address": "302 College Avenue West 168", "lat": 43.519815780935154, "lon": -80.24679920312856}, {"address": "302 College Avenue West 169", "lat": 43.51978058961953, "lon": -80.24684675648717}, {"address": "302 College Avenue West 170", "lat": 43.5197474879889, "lon": -80.24690931998971}, {"address": "302 College Avenue West 171", "lat": 43.51970357266612, "lon": -80.24695677262446}, {"address": "302 College Avenue West 172", "lat": 43.51966614605712, "lon": -80.24701329215611}, {"address": "302 College Avenue West 173", "lat": 43.51968876210777, "lon": -80.24652496987417}, {"address": "302 College Avenue West 174", "lat": 43.51965360793359, "lon": -80.24656652791151}, {"address": "302 College Avenue West 175", "lat": 43.51961409176775, "lon": -80.24660803624107}, {"address": "302 College Avenue West 176", "lat": 43.51957879121614, "lon": -80.24667357316552}, {"address": "302 College Avenue West 178", "lat": 43.51949964854971, "lon": -80.2467745718941}, {"address": "302 College Avenue West 179", "lat": 43.52006340006167, "lon": -80.24661322263454}, {"address": "302 College Avenue West 180", "lat": 43.52003099414531, "lon": -80.24656189108222}, {"address": "302 College Avenue West 181", "lat": 43.51998334024935, "lon": -80.24650738747206}, {"address": "302 College Avenue West 182", "lat": 43.51995313424696, "lon": -80.24645308501483}, {"address": "302 College Avenue West 183", "lat": 43.51991200429969, "lon": -80.24640165311563}, {"address": "302 College Avenue West 184", "lat": 43.5198730372636, "lon": -80.24635324441968}, {"address": "302 College Avenue West 185", "lat": 43.5198341072289, "lon": -80.24629884162705}, {"address": "302 College Avenue West 186", "lat": 43.51980610107585, "lon": -80.246241567141}, {"address": "302 College Avenue West 187", "lat": 43.52005844769959, "lon": -80.245995688551}, {"address": "302 College Avenue West 188", "lat": 43.52002098456619, "lon": -80.24605820318192}, {"address": "302 College Avenue West 189", "lat": 43.51998579356439, "lon": -80.24610575712978}, {"address": "302 College Avenue West 190", "lat": 43.519948403489366, "lon": -80.24615628205133}, {"address": "302 College Avenue West 191", "lat": 43.52002009808937, "lon": -80.24548867628921}, {"address": "302 College Avenue West 192", "lat": 43.51998054534309, "lon": -80.24553617974476}, {"address": "302 College Avenue West 193", "lat": 43.5199431555223, "lon": -80.24558670501015}, {"address": "302 College Avenue West 195", "lat": 43.519872665624796, "lon": -80.24569979572414}, {"address": "302 College Avenue West 196", "lat": 43.51983531183004, "lon": -80.245744327888}, {"address": "302 College Avenue West 197", "lat": 43.519791323907874, "lon": -80.24580376972881}, {"address": "302 College Avenue West 198", "lat": 43.51975613390244, "lon": -80.24585132239241}, {"address": "302 College Avenue West 199", "lat": 43.51969458700593, "lon": -80.24592854683901}, {"address": "302 College Avenue West 200", "lat": 43.5196549970657, "lon": -80.24598204389251}, {"address": "302 College Avenue West 201", "lat": 43.519619806991905, "lon": -80.2460295975826}, {"address": "302 College Avenue West 202", "lat": 43.519582453956396, "lon": -80.24607412810818}, {"address": "302 College Avenue West 203", "lat": 43.51954499077299, "lon": -80.24613664219558}, {"address": "302 College Avenue West 204", "lat": 43.51950760067864, "lon": -80.24618716672661}, {"address": "302 College Avenue West 205", "lat": 43.51947240961654, "lon": -80.2462347201929}, {"address": "302 College Avenue West 206", "lat": 43.519434983356525, "lon": -80.24629123871097}, {"address": "302 College Avenue West 207", "lat": 43.51937563520376, "lon": -80.24636549007027}, {"address": "302 College Avenue West 208", "lat": 43.519336008932875, "lon": -80.24642498189182}, {"address": "302 College Avenue West 209", "lat": 43.51930518064537, "lon": -80.2464725847236}, {"address": "302 College Avenue West 210", "lat": 43.51925910257054, "lon": -80.24651701421229}, {"address": "302 College Avenue West 211", "lat": 43.51922607518755, "lon": -80.2465675891523}, {"address": "302 College Avenue West 212", "lat": 43.519182122962654, "lon": -80.24662103571346}, {"address": "302 College Avenue West 213", "lat": 43.519149168706406, "lon": -80.24665962112421}, {"address": "302 College Avenue West 214", "lat": 43.51911819305028, "lon": -80.24673120126803}, {"address": "302 College Avenue West 194", "lat": 43.51990572960818, "lon": -80.24564322684232}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 231;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

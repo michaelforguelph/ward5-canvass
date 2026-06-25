@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 21 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 21</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 221</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "21";
+const ZONE_NAME = "Zone 21";
+const ZONE_POLYGON = [[43.518807, -80.232556], [43.518075, -80.233259], [43.51594, -80.230871], [43.515111, -80.229568], [43.514219, -80.229377], [43.513805, -80.227561], [43.515419, -80.225394], [43.513815, -80.221483], [43.513699, -80.220941], [43.51407, -80.220839], [43.515621, -80.22346], [43.515982, -80.226111], [43.516166, -80.227956], [43.516704, -80.229656], [43.518807, -80.232556]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.51573069505807, -80.22792377533851];     // [lat, lon]
+const ADDRESSES = [{"address": "521 Edinburgh Road South", "lat": 43.51857716821893, "lon": -80.23253830112652}, {"address": "523 Edinburgh Road South", "lat": 43.51852180224323, "lon": -80.23245904742824}, {"address": "525 Edinburgh Road South", "lat": 43.51845510577711, "lon": -80.23237557474202}, {"address": "527 Edinburgh Road South", "lat": 43.5183994707082, "lon": -80.23230105130695}, {"address": "537 Edinburgh Road South", "lat": 43.517948796111455, "lon": -80.23168614132437}, {"address": "539 Edinburgh Road South", "lat": 43.51788633533276, "lon": -80.23162715227203}, {"address": "541 Edinburgh Road South", "lat": 43.51782045285094, "lon": -80.23154578064107}, {"address": "543 Edinburgh Road South", "lat": 43.517769739157906, "lon": -80.23147463721568}, {"address": "545 Edinburgh Road South", "lat": 43.51770293777563, "lon": -80.23138678297718}, {"address": "547 Edinburgh Road South", "lat": 43.517644667803786, "lon": -80.2313135222193}, {"address": "549 Edinburgh Road South", "lat": 43.517577136461334, "lon": -80.2312470210037}, {"address": "551 Edinburgh Road South", "lat": 43.517530362790936, "lon": -80.23115404546283}, {"address": "553 Edinburgh Road South", "lat": 43.51746835466423, "lon": -80.23106694271867}, {"address": "555 Edinburgh Road South", "lat": 43.51740917534061, "lon": -80.23100175631252}, {"address": "557 Edinburgh Road South", "lat": 43.51731636996122, "lon": -80.23091465903168}, {"address": "559 Edinburgh Road South", "lat": 43.51726839073342, "lon": -80.23082722768078}, {"address": "569 Edinburgh Road South", "lat": 43.516772614982436, "lon": -80.2302060378353}, {"address": "571 Edinburgh Road South", "lat": 43.51671447829066, "lon": -80.23012179429199}, {"address": "573 Edinburgh Road South", "lat": 43.51667743794296, "lon": -80.22989014531815}, {"address": "581 Edinburgh Road South", "lat": 43.51630814734836, "lon": -80.22940236544272}, {"address": "583 Edinburgh Road South", "lat": 43.51623104056307, "lon": -80.2292181680813}, {"address": "585 Edinburgh Road South", "lat": 43.516154559974126, "lon": -80.22903928223607}, {"address": "587 Edinburgh Road South", "lat": 43.516089233628044, "lon": -80.22879739786998}, {"address": "589 Edinburgh Road South", "lat": 43.51602032085824, "lon": -80.22866328480292}, {"address": "591 Edinburgh Road South", "lat": 43.51600445670193, "lon": -80.22842514115281}, {"address": "593 Edinburgh Road South", "lat": 43.51593659318201, "lon": -80.22826338348911}, {"address": "595 Edinburgh Road South", "lat": 43.51590522484652, "lon": -80.22805833431009}, {"address": "599 Edinburgh Road South", "lat": 43.51587666691061, "lon": -80.22785456595587}, {"address": "603 Edinburgh Road South", "lat": 43.515851082151556, "lon": -80.22764858228916}, {"address": "607 Edinburgh Road South", "lat": 43.515828851633856, "lon": -80.22743708111595}, {"address": "611 Edinburgh Road South", "lat": 43.5158090662147, "lon": -80.22722716970836}, {"address": "615 Edinburgh Road South", "lat": 43.515787318313286, "lon": -80.22702164236298}, {"address": "619 Edinburgh Road South", "lat": 43.515761579649265, "lon": -80.22681842041155}, {"address": "623 Edinburgh Road South", "lat": 43.51572978513928, "lon": -80.2266183728403}, {"address": "627 Edinburgh Road South", "lat": 43.5157695023423, "lon": -80.22641053892883}, {"address": "631 Edinburgh Road South", "lat": 43.51572443660604, "lon": -80.22621473790552}, {"address": "635 Edinburgh Road South", "lat": 43.51570037579411, "lon": -80.22601111646244}, {"address": "649 Edinburgh Road South", "lat": 43.515709784385756, "lon": -80.22547248861729}, {"address": "653 Edinburgh Road South", "lat": 43.51567166671908, "lon": -80.22523007740473}, {"address": "657 Edinburgh Road South", "lat": 43.515642796561835, "lon": -80.22500822273689}, {"address": "661 Edinburgh Road South", "lat": 43.51563287481596, "lon": -80.22479053405732}, {"address": "667 Edinburgh Road South", "lat": 43.51565398264171, "lon": -80.22460172907354}, {"address": "671 Edinburgh Road South", "lat": 43.51562228947555, "lon": -80.22440418470225}, {"address": "675 Edinburgh Road South", "lat": 43.515587603599634, "lon": -80.22420049753984}, {"address": "679 Edinburgh Road South", "lat": 43.5155468062362, "lon": -80.22399840951795}, {"address": "685 Edinburgh Road South", "lat": 43.515493927665936, "lon": -80.22380960391112}, {"address": "687 Edinburgh Road South", "lat": 43.51544252598305, "lon": -80.22363744799347}, {"address": "689 Edinburgh Road South", "lat": 43.51536841442404, "lon": -80.22335751076542}, {"address": "691 Edinburgh Road South", "lat": 43.51529627748269, "lon": -80.22317878329424}, {"address": "693 Edinburgh Road South", "lat": 43.51522014427271, "lon": -80.22300907882574}, {"address": "695 Edinburgh Road South", "lat": 43.51513167024942, "lon": -80.22284145584706}, {"address": "697 Edinburgh Road South", "lat": 43.51504083070607, "lon": -80.22268405120907}, {"address": "699 Edinburgh Road South", "lat": 43.51494501808188, "lon": -80.22253289587596}, {"address": "701 Edinburgh Road South", "lat": 43.514841662969914, "lon": -80.22238447072628}, {"address": "703 Edinburgh Road South", "lat": 43.51474019984867, "lon": -80.22223769205542}, {"address": "705 Edinburgh Road South", "lat": 43.51463719314135, "lon": -80.22209169707915}, {"address": "707 Edinburgh Road South", "lat": 43.51453447030712, "lon": -80.2219441771497}, {"address": "709 Edinburgh Road South", "lat": 43.51443227306693, "lon": -80.22179797109293}, {"address": "711 Edinburgh Road South", "lat": 43.51432052053584, "lon": -80.22164914787437}, {"address": "715 Edinburgh Road South", "lat": 43.514217430276936, "lon": -80.22150183708939}, {"address": "717 Edinburgh Road South", "lat": 43.51411527124571, "lon": -80.22135603661998}, {"address": "719 Edinburgh Road South", "lat": 43.51401425496969, "lon": -80.22121001656478}, {"address": "47 Ironwood Road", "lat": 43.51655784427819, "lon": -80.22997699021427}, {"address": "49 Ironwood Road", "lat": 43.516483469492286, "lon": -80.23009601420864}, {"address": "51 Ironwood Road", "lat": 43.516439103244814, "lon": -80.23018538744184}, {"address": "53 Ironwood Road", "lat": 43.51636129888062, "lon": -80.23025791944343}, {"address": "55 Ironwood Road", "lat": 43.51630060702622, "lon": -80.23032229416972}, {"address": "57 Ironwood Road", "lat": 43.51621928690196, "lon": -80.23037135494491}, {"address": "59 Ironwood Road", "lat": 43.51616094808564, "lon": -80.23044660974219}, {"address": "61 Ironwood Road", "lat": 43.51607913052397, "lon": -80.23048076871642}, {"address": "63 Ironwood Road", "lat": 43.51603632268686, "lon": -80.23058848478047}, {"address": "46 Ironwood Road", "lat": 43.516439991794684, "lon": -80.2295272831047}, {"address": "48 Ironwood Road", "lat": 43.5163343999855, "lon": -80.22964767086931}, {"address": "62 Ironwood Road", "lat": 43.51583592666659, "lon": -80.23001581767507}, {"address": "64 Ironwood Road", "lat": 43.51577321516292, "lon": -80.23009140507538}, {"address": "66 Ironwood Road", "lat": 43.5157027455048, "lon": -80.23015789068235}, {"address": "68 Ironwood Road", "lat": 43.51563946651763, "lon": -80.23022503450366}, {"address": "2 Koch Drive", "lat": 43.515230293879036, "lon": -80.22855544794453}, {"address": "4 Koch Drive", "lat": 43.51509607463916, "lon": -80.22861585532699}, {"address": "22 Koch Drive", "lat": 43.51496232818638, "lon": -80.22867961429809}, {"address": "24 Koch Drive", "lat": 43.514832593075326, "lon": -80.22873843354981}, {"address": "26 Koch Drive", "lat": 43.51479981840063, "lon": -80.22852366867886}, {"address": "28 Koch Drive", "lat": 43.51477620386965, "lon": -80.22841278113805}, {"address": "30 Koch Drive", "lat": 43.514752771891914, "lon": -80.22830174165126}, {"address": "32 Koch Drive", "lat": 43.514729275424905, "lon": -80.22820063934813}, {"address": "34 Koch Drive", "lat": 43.51470486589945, "lon": -80.22810861525429}, {"address": "36 Koch Drive", "lat": 43.5146791407024, "lon": -80.22798884188629}, {"address": "42 Koch Drive", "lat": 43.51468469484414, "lon": -80.22785581734911}, {"address": "44 Koch Drive", "lat": 43.51470178865895, "lon": -80.22771239509221}, {"address": "48 Koch Drive", "lat": 43.514726167657486, "lon": -80.2276032317991}, {"address": "50 Koch Drive", "lat": 43.51476066412248, "lon": -80.22749586202364}, {"address": "54 Koch Drive", "lat": 43.51482318816894, "lon": -80.22739918186811}, {"address": "56 Koch Drive", "lat": 43.51488432763921, "lon": -80.22730495283693}, {"address": "76 Koch Drive", "lat": 43.515360084697626, "lon": -80.22655326517699}, {"address": "78 Koch Drive", "lat": 43.515422937531405, "lon": -80.22648014734057}, {"address": "80 Koch Drive", "lat": 43.5154814020208, "lon": -80.2263619713655}, {"address": "82 Koch Drive", "lat": 43.515525939514866, "lon": -80.226277986534}, {"address": "1 Koch Drive", "lat": 43.51531097889895, "lon": -80.2290565612793}, {"address": "3 Koch Drive", "lat": 43.515173779748906, "lon": -80.22913858195902}, {"address": "5 Koch Drive", "lat": 43.51511454607398, "lon": -80.22932420683394}, {"address": "7 Koch Drive", "lat": 43.51502792432819, "lon": -80.22933701483113}, {"address": "9 Koch Drive", "lat": 43.5149483518169, "lon": -80.22935059791365}, {"address": "11 Koch Drive", "lat": 43.514813071269664, "lon": -80.22935059480402}, {"address": "15 Koch Drive", "lat": 43.514680107593264, "lon": -80.22932776112452}, {"address": "17 Koch Drive", "lat": 43.51459333637699, "lon": -80.22928553488666}, {"address": "19 Koch Drive", "lat": 43.514513030810406, "lon": -80.22917942470079}, {"address": "21 Koch Drive", "lat": 43.51446261649864, "lon": -80.22901202148435}, {"address": "23 Koch Drive", "lat": 43.514409521473844, "lon": -80.22888281391793}, {"address": "25 Koch Drive", "lat": 43.51436051791258, "lon": -80.22878071667482}, {"address": "27 Koch Drive", "lat": 43.51431354476903, "lon": -80.22867889438231}, {"address": "29 Koch Drive", "lat": 43.514283310300094, "lon": -80.22857625524955}, {"address": "31 Koch Drive", "lat": 43.514268646952885, "lon": -80.22846910732476}, {"address": "33 Koch Drive", "lat": 43.514255061403894, "lon": -80.22835236708006}, {"address": "35 Koch Drive", "lat": 43.51423949540009, "lon": -80.22824371886804}, {"address": "39 Koch Drive", "lat": 43.51420570071582, "lon": -80.22798044275417}, {"address": "43 Koch Drive", "lat": 43.51421365033563, "lon": -80.22765243844164}, {"address": "47 Koch Drive", "lat": 43.51427514771137, "lon": -80.22739472826832}, {"address": "51 Koch Drive", "lat": 43.514386757301075, "lon": -80.22718826262202}, {"address": "55 Koch Drive", "lat": 43.51451686971421, "lon": -80.22700755929384}, {"address": "59 Koch Drive", "lat": 43.51461865551154, "lon": -80.22685390036251}, {"address": "63 Koch Drive", "lat": 43.51472814867908, "lon": -80.2266797329771}, {"address": "67 Koch Drive", "lat": 43.51483412086055, "lon": -80.22649890160578}, {"address": "71 Koch Drive", "lat": 43.51494509879233, "lon": -80.22631522926746}, {"address": "75 Koch Drive", "lat": 43.515048417123666, "lon": -80.22613749889192}, {"address": "77 Koch Drive", "lat": 43.51509975429838, "lon": -80.226050032588}, {"address": "79 Koch Drive", "lat": 43.51515200238657, "lon": -80.22596093369579}, {"address": "81 Koch Drive", "lat": 43.51520450480322, "lon": -80.22587137361553}, {"address": "83 Koch Drive", "lat": 43.51524852047691, "lon": -80.22575732039138}, {"address": "85 Koch Drive", "lat": 43.51538596291517, "lon": -80.2256631872617}, {"address": "87 Koch Drive", "lat": 43.515501791236275, "lon": -80.22545935044425}, {"address": "191 Kortright Road West", "lat": 43.51384084622257, "lon": -80.22108408158222}, {"address": "1 Laurelwood Court", "lat": 43.517190435614964, "lon": -80.23064708355346}, {"address": "3 Laurelwood Court", "lat": 43.51710381765811, "lon": -80.23077770224964}, {"address": "5 Laurelwood Court", "lat": 43.51710605725693, "lon": -80.23097985544551}, {"address": "7 Laurelwood Court", "lat": 43.517076355255575, "lon": -80.23109904697753}, {"address": "9 Laurelwood Court", "lat": 43.516988697969104, "lon": -80.23118605249428}, {"address": "11 Laurelwood Court", "lat": 43.516868918413465, "lon": -80.23124512804655}, {"address": "15 Laurelwood Court", "lat": 43.51676403787872, "lon": -80.23120975438334}, {"address": "17 Laurelwood Court", "lat": 43.51666051907018, "lon": -80.23114925172217}, {"address": "2 Laurelwood Court", "lat": 43.51690662161394, "lon": -80.2303224330379}, {"address": "4 Laurelwood Court", "lat": 43.516839376890346, "lon": -80.2304270042991}, {"address": "6 Laurelwood Court", "lat": 43.516701379830124, "lon": -80.23043195403396}, {"address": "8 Laurelwood Court", "lat": 43.51663363145153, "lon": -80.23051401644798}, {"address": "10 Laurelwood Court", "lat": 43.51657834407726, "lon": -80.23062017965252}, {"address": "12 Laurelwood Court", "lat": 43.51653978531457, "lon": -80.23076739085873}, {"address": "14 Laurelwood Court", "lat": 43.51653655883194, "lon": -80.23089289669718}, {"address": "16 Laurelwood Court", "lat": 43.51657247913327, "lon": -80.23105416628422}, {"address": "1 Thornberry Court", "lat": 43.51831204521791, "lon": -80.23214594029216}, {"address": "3 Thornberry Court", "lat": 43.5182654109737, "lon": -80.23220969648898}, {"address": "5 Thornberry Court", "lat": 43.518225846782464, "lon": -80.23246831253454}, {"address": "7 Thornberry Court", "lat": 43.5181885312317, "lon": -80.23257009038517}, {"address": "9 Thornberry Court", "lat": 43.51809486059235, "lon": -80.2326330626362}, {"address": "11 Thornberry Court", "lat": 43.518004015529726, "lon": -80.23265754214003}, {"address": "15 Thornberry Court", "lat": 43.517876117754916, "lon": -80.23269311337903}, {"address": "17 Thornberry Court", "lat": 43.517818266466804, "lon": -80.23263072669495}, {"address": "2 Thornberry Court", "lat": 43.51805223973623, "lon": -80.23181550331115}, {"address": "4 Thornberry Court", "lat": 43.51801519038123, "lon": -80.23190923786991}, {"address": "6 Thornberry Court", "lat": 43.51783781700433, "lon": -80.23196433561849}, {"address": "8 Thornberry Court", "lat": 43.51777757311171, "lon": -80.23202704161044}, {"address": "10 Thornberry Court", "lat": 43.517693611146534, "lon": -80.23210503198722}, {"address": "14 Thornberry Court", "lat": 43.51767089144432, "lon": -80.23243339525179}, {"address": "16 Thornberry Court", "lat": 43.51770719058729, "lon": -80.23252868612335}, {"address": "6 Walman Drive", "lat": 43.51606595265537, "lon": -80.2296596194514}, {"address": "8 Walman Drive", "lat": 43.5160203705, "lon": -80.22956152979557}, {"address": "10 Walman Drive", "lat": 43.51597407147189, "lon": -80.2294666390799}, {"address": "12 Walman Drive", "lat": 43.515929033092554, "lon": -80.22936722634753}, {"address": "14 Walman Drive", "lat": 43.515882204562295, "lon": -80.22927021456867}, {"address": "16 Walman Drive", "lat": 43.515835902909124, "lon": -80.22917497046743}, {"address": "18 Walman Drive", "lat": 43.51579059479065, "lon": -80.2290792585503}, {"address": "20 Walman Drive", "lat": 43.51574495449086, "lon": -80.22898370318872}, {"address": "22 Walman Drive", "lat": 43.51567780892746, "lon": -80.22889223134523}, {"address": "24 Walman Drive", "lat": 43.51564702536192, "lon": -80.22878478138418}, {"address": "26 Walman Drive", "lat": 43.51562345791376, "lon": -80.22868083508894}, {"address": "28 Walman Drive", "lat": 43.51560678561796, "lon": -80.22856871926527}, {"address": "30 Walman Drive", "lat": 43.51559254955425, "lon": -80.22843749271007}, {"address": "32 Walman Drive", "lat": 43.515582860951156, "lon": -80.2283188765456}, {"address": "34 Walman Drive", "lat": 43.515573265672344, "lon": -80.22820329917128}, {"address": "36 Walman Drive", "lat": 43.51556818472948, "lon": -80.22809101601787}, {"address": "38 Walman Drive", "lat": 43.51555874372754, "lon": -80.2279764512919}, {"address": "40 Walman Drive", "lat": 43.515549335304016, "lon": -80.22786112774789}, {"address": "42 Walman Drive", "lat": 43.5155396486752, "lon": -80.22774849139762}, {"address": "44 Walman Drive", "lat": 43.51553262442498, "lon": -80.2276338464639}, {"address": "46 Walman Drive", "lat": 43.515522988640285, "lon": -80.22751224313583}, {"address": "48 Walman Drive", "lat": 43.5155115590585, "lon": -80.22739263491974}, {"address": "50 Walman Drive", "lat": 43.515495935288264, "lon": -80.2272691792025}, {"address": "52 Walman Drive", "lat": 43.51547693888888, "lon": -80.22714885973217}, {"address": "54 Walman Drive", "lat": 43.515457088241156, "lon": -80.22705643278356}, {"address": "56 Walman Drive", "lat": 43.51542285109106, "lon": -80.22693478744009}, {"address": "58 Walman Drive", "lat": 43.51532564720695, "lon": -80.22684296844112}, {"address": "60 Walman Drive", "lat": 43.51525283339645, "lon": -80.2266616089975}, {"address": "5 Walman Drive", "lat": 43.515628437885546, "lon": -80.22991906455873}, {"address": "7 Walman Drive", "lat": 43.51557869420509, "lon": -80.22982725916972}, {"address": "9 Walman Drive", "lat": 43.51552757217455, "lon": -80.22973896918802}, {"address": "11 Walman Drive", "lat": 43.51547816515476, "lon": -80.22964797269296}, {"address": "15 Walman Drive", "lat": 43.5154298830707, "lon": -80.22955382559317}, {"address": "17 Walman Drive", "lat": 43.51538807074219, "lon": -80.22946292824194}, {"address": "19 Walman Drive", "lat": 43.51535014752261, "lon": -80.22936311784336}, {"address": "21 Walman Drive", "lat": 43.515310728983756, "lon": -80.22926029038524}, {"address": "33 Walman Drive", "lat": 43.51520086279561, "lon": -80.22834291569774}, {"address": "35 Walman Drive", "lat": 43.515198419560136, "lon": -80.22822933266167}, {"address": "37 Walman Drive", "lat": 43.515186075534004, "lon": -80.22809433284945}, {"address": "39 Walman Drive", "lat": 43.515177813985, "lon": -80.22797975257102}, {"address": "41 Walman Drive", "lat": 43.5151712155316, "lon": -80.22786545795591}, {"address": "43 Walman Drive", "lat": 43.51516512875111, "lon": -80.2277505481141}, {"address": "45 Walman Drive", "lat": 43.51516373938603, "lon": -80.2276159147828}, {"address": "47 Walman Drive", "lat": 43.51516031002492, "lon": -80.22751814038406}, {"address": "55 Walman Drive", "lat": 43.515087592416776, "lon": -80.22733073914969}, {"address": "57 Walman Drive", "lat": 43.51500512098589, "lon": -80.22714438459798}, {"address": "57 Koch Drive", "lat": 43.51457163308661, "lon": -80.22691934058744}, {"address": "49 Koch Drive", "lat": 43.5143248474733, "lon": -80.22728853356188}, {"address": "53 Koch Drive", "lat": 43.5144487617749, "lon": -80.22709108335438}, {"address": "45 Koch Drive", "lat": 43.51426053777755, "lon": -80.22750858151248}, {"address": "37 Koch Drive", "lat": 43.51422966990677, "lon": -80.22810738999436}, {"address": "41 Koch Drive", "lat": 43.514203238844516, "lon": -80.22785842022085}, {"address": "69 Koch Drive", "lat": 43.514886003237116, "lon": -80.22641026223478}, {"address": "65 Koch Drive", "lat": 43.514783708043915, "lon": -80.22658942493248}, {"address": "61 Koch Drive", "lat": 43.51467409043538, "lon": -80.22677246523499}, {"address": "73 Koch Drive", "lat": 43.514997161139725, "lon": -80.22622592906113}, {"address": "12 Thornberry Court", "lat": 43.517665374205556, "lon": -80.23225323756533}, {"address": "50 Ironwood Road", "lat": 43.51621264867545, "lon": -80.22976720094348}, {"address": "52 Ironwood Road", "lat": 43.51610007063186, "lon": -80.22988524297584}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 221;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

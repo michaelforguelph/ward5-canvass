@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 33 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 33</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 121</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "33";
+const ZONE_NAME = "Zone 33";
+const ZONE_POLYGON = [[43.524634, -80.21054], [43.523656, -80.208773], [43.523232, -80.20687], [43.521245, -80.201598], [43.522689, -80.200474], [43.524351, -80.204024], [43.526263, -80.208383], [43.524634, -80.21054]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.523786656308026, -80.20553425096587];     // [lat, lon]
+const ADDRESSES = [{"address": "40 Brady Lane", "lat": 43.52434960711407, "lon": -80.20965813830885}, {"address": "42 Brady Lane", "lat": 43.52446444701784, "lon": -80.20948623498928}, {"address": "44 Brady Lane", "lat": 43.52457984248937, "lon": -80.20933064560751}, {"address": "46 Brady Lane", "lat": 43.52469528040589, "lon": -80.20917601656868}, {"address": "48 Brady Lane", "lat": 43.52481017334409, "lon": -80.20902255725721}, {"address": "50 Brady Lane", "lat": 43.52492684311272, "lon": -80.20886461685}, {"address": "52 Brady Lane", "lat": 43.525044226256334, "lon": -80.20870869468746}, {"address": "54 Brady Lane", "lat": 43.52515855803752, "lon": -80.20855412846188}, {"address": "58 Brady Lane", "lat": 43.525284495821715, "lon": -80.20840863387191}, {"address": "64 Brady Lane", "lat": 43.52550229824381, "lon": -80.2087493565715}, {"address": "39 Brady Lane", "lat": 43.52400028886576, "lon": -80.20909894463344}, {"address": "41 Brady Lane", "lat": 43.52411705819529, "lon": -80.20893416344842}, {"address": "43 Brady Lane", "lat": 43.52424425148014, "lon": -80.20876209795861}, {"address": "45 Brady Lane", "lat": 43.52437041101971, "lon": -80.2085952647656}, {"address": "53 Brady Lane", "lat": 43.52484411749235, "lon": -80.20789846767104}, {"address": "55 Brady Lane", "lat": 43.52501099634329, "lon": -80.20775345261187}, {"address": "57 Brady Lane", "lat": 43.5253222479722, "lon": -80.20772307197545}, {"address": "61 Brady Lane", "lat": 43.52551479805178, "lon": -80.20786034400854}, {"address": "63 Brady Lane", "lat": 43.52563856892457, "lon": -80.2080836208312}, {"address": "65 Brady Lane", "lat": 43.52575752405768, "lon": -80.20825581834586}, {"address": "12 Fieldstone Road", "lat": 43.523902147232114, "lon": -80.2087259607489}, {"address": "14 Fieldstone Road", "lat": 43.52380984356963, "lon": -80.20848783431279}, {"address": "16 Fieldstone Road", "lat": 43.52374595149727, "lon": -80.20824609248717}, {"address": "18 Fieldstone Road", "lat": 43.52368207140296, "lon": -80.20800095428926}, {"address": "20 Fieldstone Road", "lat": 43.523619430372406, "lon": -80.20775889270956}, {"address": "22 Fieldstone Road", "lat": 43.52355498342072, "lon": -80.20751188579199}, {"address": "37 Kortright Road East", "lat": 43.52456340994221, "lon": -80.20999719121217}, {"address": "39 Kortright Road East", "lat": 43.52469309982343, "lon": -80.2098446593024}, {"address": "41 Kortright Road East", "lat": 43.52480912310011, "lon": -80.20968916080845}, {"address": "43 Kortright Road East", "lat": 43.524924567291336, "lon": -80.20953523959899}, {"address": "45 Kortright Road East", "lat": 43.52504008827082, "lon": -80.2093817758907}, {"address": "47 Kortright Road East", "lat": 43.52515665178476, "lon": -80.20922454477989}, {"address": "49 Kortright Road East", "lat": 43.525273968589396, "lon": -80.20906963582142}, {"address": "51 Kortright Road East", "lat": 43.525388379947955, "lon": -80.20891582968042}, {"address": "57 Kortright Road East", "lat": 43.52588129017714, "lon": -80.20840920103501}, {"address": "1 Robin Road", "lat": 43.524486869812556, "lon": -80.20842293232303}, {"address": "3 Robin Road", "lat": 43.5241901566849, "lon": -80.20831098843624}, {"address": "5 Robin Road", "lat": 43.524102659205035, "lon": -80.20811714693885}, {"address": "7 Robin Road", "lat": 43.52402499724957, "lon": -80.20787360710784}, {"address": "9 Robin Road", "lat": 43.52395964544707, "lon": -80.2076290430472}, {"address": "11 Robin Road", "lat": 43.52389718695278, "lon": -80.20738692886066}, {"address": "15 Robin Road", "lat": 43.523832807909436, "lon": -80.20713931274565}, {"address": "2 Robin Road", "lat": 43.524721925543034, "lon": -80.20808937941497}, {"address": "4 Robin Road", "lat": 43.524618694506366, "lon": -80.20784301625547}, {"address": "6 Robin Road", "lat": 43.52454033833252, "lon": -80.20763243064751}, {"address": "8 Robin Road", "lat": 43.524471717353585, "lon": -80.20740590117835}, {"address": "10 Robin Road", "lat": 43.52440452065633, "lon": -80.20716668468285}, {"address": "12 Robin Road", "lat": 43.52433709126672, "lon": -80.20693111972852}, {"address": "14 Robin Road", "lat": 43.524255643916575, "lon": -80.20663668367385}, {"address": "49 Robin Road", "lat": 43.52316600974945, "lon": -80.2034162975257}, {"address": "25 Robin Road", "lat": 43.52361366382121, "lon": -80.20600253509909}, {"address": "26 Robin Road", "lat": 43.524033732925645, "lon": -80.20548197866556}, {"address": "47 Fieldstone Road", "lat": 43.52339232075148, "lon": -80.20507506032327}, {"address": "17 Robin Road", "lat": 43.52377176110131, "lon": -80.20691471662138}, {"address": "26 Fieldstone Road", "lat": 43.52345630904041, "lon": -80.20703076261101}, {"address": "24 Fieldstone Road", "lat": 43.523493048296054, "lon": -80.20727620353915}, {"address": "28 Fieldstone Road", "lat": 43.523426650217566, "lon": -80.20676404338121}, {"address": "30 Fieldstone Road", "lat": 43.523395724173035, "lon": -80.20651137828156}, {"address": "32 Fieldstone Road", "lat": 43.52335779752004, "lon": -80.20630239816336}, {"address": "34 Fieldstone Road", "lat": 43.523321313704464, "lon": -80.20610454726116}, {"address": "36 Fieldstone Road", "lat": 43.523284753762866, "lon": -80.20590654539421}, {"address": "38 Fieldstone Road", "lat": 43.52325181075658, "lon": -80.20568771765474}, {"address": "29 Robin Road", "lat": 43.52353674530651, "lon": -80.20559604056317}, {"address": "27 Robin Road", "lat": 43.523577178952515, "lon": -80.20580473676722}, {"address": "23 Robin Road", "lat": 43.523650223611824, "lon": -80.20620053933666}, {"address": "21 Robin Road", "lat": 43.5236860810401, "lon": -80.20641441430766}, {"address": "19 Robin Road", "lat": 43.52372587360775, "lon": -80.20664785360073}, {"address": "16 Robin Road", "lat": 43.524198465089675, "lon": -80.20643840054382}, {"address": "18 Robin Road", "lat": 43.52417105573533, "lon": -80.2062167829672}, {"address": "20 Robin Road", "lat": 43.52413743520562, "lon": -80.20602776182479}, {"address": "22 Robin Road", "lat": 43.52410386367165, "lon": -80.20584583939383}, {"address": "24 Robin Road", "lat": 43.524070254548754, "lon": -80.20566386197366}, {"address": "32 Robin Road", "lat": 43.52390152569894, "lon": -80.20483553828831}, {"address": "49 Fieldstone Road", "lat": 43.523546203052256, "lon": -80.20501875653845}, {"address": "45 Fieldstone Road", "lat": 43.52324393784896, "lon": -80.20512678123528}, {"address": "43 Fieldstone Road", "lat": 43.52310275267865, "lon": -80.2051756219759}, {"address": "41 Fieldstone Road", "lat": 43.522930715161955, "lon": -80.2053500783075}, {"address": "39 Fieldstone Road", "lat": 43.52285657358382, "lon": -80.20556063466141}, {"address": "28 Robin Road", "lat": 43.52402261211828, "lon": -80.2051533679986}, {"address": "46 Robin Road", "lat": 43.52362398437363, "lon": -80.20339836974414}, {"address": "9 Marsland Court", "lat": 43.5228190756876, "lon": -80.20453967354266}, {"address": "11 Marsland Court", "lat": 43.52274000875718, "lon": -80.20437675648509}, {"address": "2 Marsland Court", "lat": 43.52333283282865, "lon": -80.20386074880552}, {"address": "3 Marsland Court", "lat": 43.52327897671896, "lon": -80.20448644421329}, {"address": "4 Marsland Court", "lat": 43.52317882641096, "lon": -80.20391518104182}, {"address": "10 Marsland Court", "lat": 43.522750438903095, "lon": -80.20412301104106}, {"address": "5 Marsland Court", "lat": 43.523139518962424, "lon": -80.20453815066003}, {"address": "8 Marsland Court", "lat": 43.52285780639875, "lon": -80.20396525948195}, {"address": "1 Marsland Court", "lat": 43.52344052808247, "lon": -80.204440428855}, {"address": "42 Robin Road", "lat": 43.523713307089125, "lon": -80.20381615374615}, {"address": "1 Falcon Circle", "lat": 43.522814507295266, "lon": -80.20292118676043}, {"address": "3 Falcon Circle", "lat": 43.52270268755894, "lon": -80.20312812973877}, {"address": "5 Falcon Circle", "lat": 43.522578280438694, "lon": -80.20322924560472}, {"address": "7 Falcon Circle", "lat": 43.52237502762713, "lon": -80.2032128870092}, {"address": "8 Falcon Circle", "lat": 43.52226860032242, "lon": -80.20299932643368}, {"address": "6 Falcon Circle", "lat": 43.522250698604424, "lon": -80.2027370973368}, {"address": "4 Falcon Circle", "lat": 43.522326249434464, "lon": -80.20249877002882}, {"address": "2 Falcon Circle", "lat": 43.522492789211746, "lon": -80.20240421551506}, {"address": "52 Robin Road", "lat": 43.52335123612828, "lon": -80.20295772890857}, {"address": "54 Robin Road", "lat": 43.523276267762725, "lon": -80.20275830924606}, {"address": "56 Robin Road", "lat": 43.5231759918683, "lon": -80.20261609243954}, {"address": "58 Robin Road", "lat": 43.523075787664794, "lon": -80.20247372295613}, {"address": "60 Robin Road", "lat": 43.52297558594723, "lon": -80.20233160634042}, {"address": "62 Robin Road", "lat": 43.52287549284296, "lon": -80.20218933779813}, {"address": "64 Robin Road", "lat": 43.5227753631873, "lon": -80.20204701823495}, {"address": "66 Robin Road", "lat": 43.52267355792143, "lon": -80.20190254216504}, {"address": "68 Robin Road", "lat": 43.52257076600514, "lon": -80.20175412485786}, {"address": "70 Robin Road", "lat": 43.52246926379694, "lon": -80.20154208384052}, {"address": "72 Robin Road", "lat": 43.52228079431179, "lon": -80.2014650645061}, {"address": "73 Robin Road", "lat": 43.522028809476254, "lon": -80.20177183433324}, {"address": "71 Robin Road", "lat": 43.52205907708376, "lon": -80.20200348539251}, {"address": "69 Robin Road", "lat": 43.52213664131936, "lon": -80.20219341720357}, {"address": "53 Robin Road", "lat": 43.52301247285405, "lon": -80.20320300863227}, {"address": "7 Marsland Court", "lat": 43.522992751485965, "lon": -80.20461379158363}, {"address": "36 Robin Road", "lat": 43.523826142088154, "lon": -80.20442765331184}, {"address": "44 Robin Road", "lat": 43.52367443712292, "lon": -80.20361516677855}, {"address": "40 Robin Road", "lat": 43.52375090806594, "lon": -80.20402012376337}, {"address": "38 Robin Road", "lat": 43.5237886170924, "lon": -80.2042238872013}, {"address": "6 Marsland Court", "lat": 43.523027036352175, "lon": -80.20391122515129}, {"address": "34 Robin Road", "lat": 43.5238639269017, "lon": -80.20463167240885}, {"address": "74 Robin Road", "lat": 43.522136599619316, "lon": -80.20155863609945}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 121;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

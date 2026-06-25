@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 30 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 30</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 153</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "30";
+const ZONE_NAME = "Zone 30";
+const ZONE_POLYGON = [[43.525116, -80.219346], [43.525076, -80.219401], [43.525152, -80.219424], [43.522083, -80.212584], [43.523457, -80.211379], [43.524668, -80.210701], [43.525911, -80.2137], [43.527546, -80.215895], [43.525116, -80.219346]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.524777575722254, -80.21478051717011];     // [lat, lon]
+const ADDRESSES = [{"address": "231 Dimson Avenue", "lat": 43.52438999966751, "lon": -80.21103504700258}, {"address": "229 Dimson Avenue", "lat": 43.52445845362348, "lon": -80.21128657006923}, {"address": "227 Dimson Avenue", "lat": 43.52450940349434, "lon": -80.2115081603338}, {"address": "225 Dimson Avenue", "lat": 43.52455169156389, "lon": -80.2117414734306}, {"address": "223 Dimson Avenue", "lat": 43.52458287400866, "lon": -80.21199003563095}, {"address": "221 Dimson Avenue", "lat": 43.52462082360302, "lon": -80.21222005852627}, {"address": "219 Dimson Avenue", "lat": 43.52467919356491, "lon": -80.21241089102966}, {"address": "217 Dimson Avenue", "lat": 43.524791425239776, "lon": -80.21257710100545}, {"address": "215 Dimson Avenue", "lat": 43.5249137905006, "lon": -80.21273684283544}, {"address": "211 Dimson Avenue", "lat": 43.52505982769264, "lon": -80.21292994731795}, {"address": "209 Dimson Avenue", "lat": 43.52518559942197, "lon": -80.2131064014026}, {"address": "207 Dimson Avenue", "lat": 43.525285930707696, "lon": -80.21325621155239}, {"address": "205 Dimson Avenue", "lat": 43.525382973889215, "lon": -80.21339181931046}, {"address": "203 Dimson Avenue", "lat": 43.52550239880173, "lon": -80.2135595136166}, {"address": "201 Dimson Avenue", "lat": 43.52560390591181, "lon": -80.21370048939093}, {"address": "191 Dimson Avenue", "lat": 43.52610865638422, "lon": -80.21440770574144}, {"address": "189 Dimson Avenue", "lat": 43.52625252065003, "lon": -80.21456737746152}, {"address": "187 Dimson Avenue", "lat": 43.526386281489245, "lon": -80.21474887400055}, {"address": "185 Dimson Avenue", "lat": 43.526519958359025, "lon": -80.21492880577613}, {"address": "183 Dimson Avenue", "lat": 43.52665563179951, "lon": -80.21511499268352}, {"address": "181 Dimson Avenue", "lat": 43.52678872716864, "lon": -80.21530172492481}, {"address": "179 Dimson Avenue", "lat": 43.52694408682181, "lon": -80.21549749267152}, {"address": "177 Dimson Avenue", "lat": 43.52712863924876, "lon": -80.21569622810252}, {"address": "175 Dimson Avenue", "lat": 43.5272758758909, "lon": -80.21608441507168}, {"address": "171 Dimson Avenue", "lat": 43.527054515912845, "lon": -80.21639657812597}, {"address": "169 Dimson Avenue", "lat": 43.52691564666037, "lon": -80.216561741758}, {"address": "167 Dimson Avenue", "lat": 43.52677619454063, "lon": -80.2167442468772}, {"address": "165 Dimson Avenue", "lat": 43.526636946478874, "lon": -80.21692963803497}, {"address": "163 Dimson Avenue", "lat": 43.5265002099328, "lon": -80.21711550321972}, {"address": "161 Dimson Avenue", "lat": 43.52636253898604, "lon": -80.2172996063371}, {"address": "159 Dimson Avenue", "lat": 43.52622906334637, "lon": -80.21749865505126}, {"address": "157 Dimson Avenue", "lat": 43.52609512671747, "lon": -80.21773815933649}, {"address": "153 Dimson Avenue", "lat": 43.5257849286454, "lon": -80.21799296400808}, {"address": "145 Dimson Avenue", "lat": 43.52507926198676, "lon": -80.21713895027463}, {"address": "143 Dimson Avenue", "lat": 43.52486756181561, "lon": -80.21683179540744}, {"address": "141 Dimson Avenue", "lat": 43.52495214131407, "lon": -80.21640275790728}, {"address": "139 Dimson Avenue", "lat": 43.5251340941891, "lon": -80.21621164898431}, {"address": "137 Dimson Avenue", "lat": 43.525284663912466, "lon": -80.21603163944303}, {"address": "135 Dimson Avenue", "lat": 43.52542140846918, "lon": -80.21584719484608}, {"address": "133 Dimson Avenue", "lat": 43.52555829514581, "lon": -80.215661985294}, {"address": "131 Dimson Avenue", "lat": 43.52569596105369, "lon": -80.2154775295539}, {"address": "129 Dimson Avenue", "lat": 43.52583321764492, "lon": -80.21529251646668}, {"address": "230 Dimson Avenue", "lat": 43.52403391190432, "lon": -80.2113195895993}, {"address": "228 Dimson Avenue", "lat": 43.52409658020175, "lon": -80.21153940963022}, {"address": "226 Dimson Avenue", "lat": 43.52416222178065, "lon": -80.2118004449325}, {"address": "224 Dimson Avenue", "lat": 43.52418636943915, "lon": -80.21207727719947}, {"address": "222 Dimson Avenue", "lat": 43.52419037506616, "lon": -80.21242249493686}, {"address": "212 Dimson Avenue", "lat": 43.524528745452066, "lon": -80.21324510492211}, {"address": "210 Dimson Avenue", "lat": 43.52464919142198, "lon": -80.21341014510101}, {"address": "208 Dimson Avenue", "lat": 43.52476633935184, "lon": -80.21357289372038}, {"address": "206 Dimson Avenue", "lat": 43.524882762747, "lon": -80.21373650621625}, {"address": "204 Dimson Avenue", "lat": 43.52499882265525, "lon": -80.21389233678701}, {"address": "202 Dimson Avenue", "lat": 43.52511150816994, "lon": -80.21404982663924}, {"address": "200 Dimson Avenue", "lat": 43.52522787325142, "lon": -80.21421147418114}, {"address": "192 Dimson Avenue", "lat": 43.52572972617413, "lon": -80.21489987154058}, {"address": "190 Dimson Avenue", "lat": 43.52596371667327, "lon": -80.21510100434486}, {"address": "174 Dimson Avenue", "lat": 43.52659434456337, "lon": -80.21595486608823}, {"address": "168 Dimson Avenue", "lat": 43.52646161363585, "lon": -80.21614924730447}, {"address": "166 Dimson Avenue", "lat": 43.52631556782137, "lon": -80.21634349438499}, {"address": "164 Dimson Avenue", "lat": 43.52616988852367, "lon": -80.21653753407136}, {"address": "162 Dimson Avenue", "lat": 43.526023946895265, "lon": -80.21673092035395}, {"address": "160 Dimson Avenue", "lat": 43.52587801011555, "lon": -80.21692506296691}, {"address": "154 Dimson Avenue", "lat": 43.525731198318944, "lon": -80.21709929524624}, {"address": "144 Dimson Avenue", "lat": 43.52550286590587, "lon": -80.21678155683503}, {"address": "138 Dimson Avenue", "lat": 43.525636660609884, "lon": -80.21658615038925}, {"address": "136 Dimson Avenue", "lat": 43.52578296526459, "lon": -80.21639190150816}, {"address": "134 Dimson Avenue", "lat": 43.525928571190775, "lon": -80.21619796391064}, {"address": "132 Dimson Avenue", "lat": 43.52607450895892, "lon": -80.21600427723412}, {"address": "130 Dimson Avenue", "lat": 43.526220631697974, "lon": -80.21581043253826}, {"address": "824 Gordon Street", "lat": 43.525120054307244, "lon": -80.21831433907644}, {"address": "834 Gordon Street", "lat": 43.52496766988774, "lon": -80.21784080209335}, {"address": "848 Gordon Street", "lat": 43.524763834301964, "lon": -80.21736792278396}, {"address": "854 Gordon Street", "lat": 43.524540006953, "lon": -80.21695387580608}, {"address": "1 Halesmanor Court", "lat": 43.52444240635766, "lon": -80.21291158902731}, {"address": "3 Halesmanor Court", "lat": 43.52430039571575, "lon": -80.21305970404605}, {"address": "5 Halesmanor Court", "lat": 43.5241861940958, "lon": -80.21320581114378}, {"address": "7 Halesmanor Court", "lat": 43.524066620030396, "lon": -80.21336063714129}, {"address": "9 Halesmanor Court", "lat": 43.523946732456395, "lon": -80.21352332426692}, {"address": "11 Halesmanor Court", "lat": 43.52382111216678, "lon": -80.21368922703108}, {"address": "15 Halesmanor Court", "lat": 43.523689302639895, "lon": -80.21385612022081}, {"address": "17 Halesmanor Court", "lat": 43.52353033397336, "lon": -80.21400554026225}, {"address": "19 Halesmanor Court", "lat": 43.523295326634305, "lon": -80.21403594206302}, {"address": "21 Halesmanor Court", "lat": 43.523109339386394, "lon": -80.21389179154585}, {"address": "23 Halesmanor Court", "lat": 43.52300987062869, "lon": -80.2136697134898}, {"address": "25 Halesmanor Court", "lat": 43.52291975975447, "lon": -80.21348588781822}, {"address": "27 Halesmanor Court", "lat": 43.522831321705176, "lon": -80.2132879493802}, {"address": "29 Halesmanor Court", "lat": 43.522814869981886, "lon": -80.21300951808601}, {"address": "4 Halesmanor Court", "lat": 43.524092949553776, "lon": -80.21255689891336}, {"address": "6 Halesmanor Court", "lat": 43.52395314944739, "lon": -80.21271462471549}, {"address": "8 Halesmanor Court", "lat": 43.52380889163236, "lon": -80.21285908314788}, {"address": "10 Halesmanor Court", "lat": 43.52367780535827, "lon": -80.21304741571969}, {"address": "20 Halesmanor Court", "lat": 43.52340615820916, "lon": -80.2133101772202}, {"address": "24 Halesmanor Court", "lat": 43.523337418133835, "lon": -80.21310762200406}, {"address": "26 Halesmanor Court", "lat": 43.52328913028407, "lon": -80.21284993188449}, {"address": "28 Halesmanor Court", "lat": 43.523130253123696, "lon": -80.21271099339313}, {"address": "30 Halesmanor Court", "lat": 43.52293658943561, "lon": -80.21277467451989}, {"address": "2 Huntington Place", "lat": 43.5232339926715, "lon": -80.21185577435493}, {"address": "4 Huntington Place", "lat": 43.5232852296819, "lon": -80.21208182148801}, {"address": "6 Huntington Place", "lat": 43.52338301380776, "lon": -80.2123076432407}, {"address": "8 Huntington Place", "lat": 43.523550120739344, "lon": -80.21240088019456}, {"address": "1 Huntington Place", "lat": 43.523562389301794, "lon": -80.2116264591816}, {"address": "3 Huntington Place", "lat": 43.52369407330407, "lon": -80.21180289360285}, {"address": "5 Huntington Place", "lat": 43.523770154690176, "lon": -80.2120324439005}, {"address": "7 Huntington Place", "lat": 43.523728094701255, "lon": -80.2122532156846}, {"address": "2 Kortright Road East", "lat": 43.522359114187836, "lon": -80.21269172015049}, {"address": "4 Kortright Road East", "lat": 43.52249928860987, "lon": -80.21255081978182}, {"address": "6 Kortright Road East", "lat": 43.522649592175505, "lon": -80.2124133865825}, {"address": "8 Kortright Road East", "lat": 43.522796670999746, "lon": -80.21227893596638}, {"address": "10 Kortright Road East", "lat": 43.522936751159065, "lon": -80.2121351467265}, {"address": "2 Latenda Place", "lat": 43.52441222300483, "lon": -80.21548113880968}, {"address": "8 Latenda Place", "lat": 43.52422752578951, "lon": -80.21505189806305}, {"address": "18 Latenda Place", "lat": 43.52436549532719, "lon": -80.21477963133783}, {"address": "20 Latenda Place", "lat": 43.524484464611646, "lon": -80.21465471917301}, {"address": "22 Latenda Place", "lat": 43.524648629237504, "lon": -80.21452819177071}, {"address": "24 Latenda Place", "lat": 43.52477723411405, "lon": -80.21425619941678}, {"address": "26 Latenda Place", "lat": 43.524617139209155, "lon": -80.21401294960529}, {"address": "3 Latenda Place", "lat": 43.52393215855862, "lon": -80.21568285277166}, {"address": "5 Latenda Place", "lat": 43.523929956807606, "lon": -80.21542992997479}, {"address": "7 Latenda Place", "lat": 43.52381275385276, "lon": -80.21524264625829}, {"address": "9 Latenda Place", "lat": 43.52365101564168, "lon": -80.21495056802486}, {"address": "11 Latenda Place", "lat": 43.523723355712804, "lon": -80.21467447265165}, {"address": "15 Latenda Place", "lat": 43.5239298797209, "lon": -80.2144903927243}, {"address": "17 Latenda Place", "lat": 43.52406823924333, "lon": -80.21433192999544}, {"address": "21 Latenda Place", "lat": 43.52416845869712, "lon": -80.21416747377711}, {"address": "23 Latenda Place", "lat": 43.524231357722925, "lon": -80.21393917603869}, {"address": "25 Latenda Place", "lat": 43.52443431709999, "lon": -80.21385061783364}, {"address": "2 Hands Drive", "lat": 43.5242907707498, "lon": -80.2166588654273}, {"address": "4 Hands Drive", "lat": 43.5244130806036, "lon": -80.21650973928826}, {"address": "6 Hands Drive", "lat": 43.52454036646644, "lon": -80.21634964751473}, {"address": "8 Hands Drive", "lat": 43.52466551910123, "lon": -80.21618497320992}, {"address": "10 Hands Drive", "lat": 43.5247835884027, "lon": -80.21601998159896}, {"address": "12 Hands Drive", "lat": 43.524897702173135, "lon": -80.21585909817114}, {"address": "14 Hands Drive", "lat": 43.52501499837702, "lon": -80.21569974198826}, {"address": "16 Hands Drive", "lat": 43.52513111067532, "lon": -80.21554004661546}, {"address": "18 Hands Drive", "lat": 43.52524779419232, "lon": -80.21538292826651}, {"address": "20 Hands Drive", "lat": 43.52536444568791, "lon": -80.21522104551316}, {"address": "22 Hands Drive", "lat": 43.525483322652796, "lon": -80.21506110949836}, {"address": "24 Hands Drive", "lat": 43.52560191521525, "lon": -80.21474703701328}, {"address": "28 Hands Drive", "lat": 43.52599704874672, "lon": -80.21422997592408}, {"address": "1 Hands Drive", "lat": 43.523976842938865, "lon": -80.21601395801413}, {"address": "3 Hands Drive", "lat": 43.52413546101602, "lon": -80.2158676538579}, {"address": "11 Hands Drive", "lat": 43.524514726465064, "lon": -80.21533226424792}, {"address": "15 Hands Drive", "lat": 43.524631830067754, "lon": -80.21517184636085}, {"address": "17 Hands Drive", "lat": 43.524748857885655, "lon": -80.21501117763152}, {"address": "19 Hands Drive", "lat": 43.52486516582442, "lon": -80.21485310016708}, {"address": "21 Hands Drive", "lat": 43.524982712551925, "lon": -80.21469292958122}, {"address": "23 Hands Drive", "lat": 43.52509988766297, "lon": -80.214532305335}, {"address": "25 Hands Drive", "lat": 43.52533668963306, "lon": -80.21438016368101}, {"address": "29 Hands Drive", "lat": 43.52572818138823, "lon": -80.21385397522197}, {"address": "151 Dimson Avenue", "lat": 43.52551783865639, "lon": -80.21772950039896}, {"address": "149 Dimson Avenue", "lat": 43.52537653965872, "lon": -80.21751287057337}, {"address": "147 Dimson Avenue", "lat": 43.52522703228119, "lon": -80.21732021962518}, {"address": "128 Dimson Avenue", "lat": 43.52636681185698, "lon": -80.21563589947435}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 153;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 8 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 8</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 400</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "08";
+const ZONE_NAME = "Zone 8";
+const ZONE_POLYGON = [[43.514601, -80.256512], [43.513782, -80.25819], [43.510243, -80.255878], [43.508455, -80.252523], [43.509188, -80.249082], [43.510367, -80.250041], [43.51151, -80.25278], [43.512379, -80.254389], [43.512975, -80.255776], [43.513993, -80.256443], [43.514601, -80.256512]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.51095438262785, -80.25390083993769];     // [lat, lon]
+const ADDRESSES = [{"address": "50 Dovercliffe Road", "lat": 43.51160181588408, "lon": -80.25412597501169}, {"address": "54 Dovercliffe Road", "lat": 43.51134398079976, "lon": -80.25435852567401}, {"address": "58 Dovercliffe Road", "lat": 43.51121751162516, "lon": -80.25448251046518}, {"address": "62 Dovercliffe Road", "lat": 43.51115246345493, "lon": -80.25463336598503}, {"address": "66 Dovercliffe Road", "lat": 43.51108540687737, "lon": -80.25481360755609}, {"address": "70 Dovercliffe Road", "lat": 43.51104794942933, "lon": -80.25500127505775}, {"address": "74 Dovercliffe Road", "lat": 43.51104245668941, "lon": -80.25519239062965}, {"address": "78 Dovercliffe Road", "lat": 43.5110569092155, "lon": -80.25536986244533}, {"address": "82 Dovercliffe Road", "lat": 43.511090529311694, "lon": -80.25557009271162}, {"address": "86 Dovercliffe Road", "lat": 43.511177260140826, "lon": -80.25569694240312}, {"address": "90 Dovercliffe Road", "lat": 43.51126275225382, "lon": -80.25585055528732}, {"address": "94 Dovercliffe Road", "lat": 43.511340146727726, "lon": -80.25599850780932}, {"address": "98 Dovercliffe Road", "lat": 43.51150490873175, "lon": -80.25618971190232}, {"address": "102 Dovercliffe Road", "lat": 43.51160384217214, "lon": -80.25629148315255}, {"address": "106 Dovercliffe Road", "lat": 43.51173508965947, "lon": -80.25638545716697}, {"address": "110 Dovercliffe Road", "lat": 43.51185413874403, "lon": -80.25648686586969}, {"address": "114 Dovercliffe Road", "lat": 43.51196946767116, "lon": -80.25658918047638}, {"address": "118 Dovercliffe Road", "lat": 43.51210209255668, "lon": -80.25667484468612}, {"address": "122 Dovercliffe Road", "lat": 43.51222068323408, "lon": -80.25677960431118}, {"address": "126 Dovercliffe Road", "lat": 43.51234079324232, "lon": -80.25686752607824}, {"address": "130 Dovercliffe Road", "lat": 43.51245902256286, "lon": -80.25695398044647}, {"address": "134 Dovercliffe Road", "lat": 43.51257527039782, "lon": -80.25705587987622}, {"address": "138 Dovercliffe Road", "lat": 43.512690461838886, "lon": -80.2571292145935}, {"address": "142 Dovercliffe Road", "lat": 43.51281842846769, "lon": -80.25720892779366}, {"address": "146 Dovercliffe Road", "lat": 43.51295294186667, "lon": -80.25728376563387}, {"address": "150 Dovercliffe Road", "lat": 43.51308427289183, "lon": -80.2573743726773}, {"address": "154 Dovercliffe Road", "lat": 43.51322060611698, "lon": -80.25741305370579}, {"address": "158 Dovercliffe Road", "lat": 43.51332870131915, "lon": -80.25750902629926}, {"address": "162 Dovercliffe Road", "lat": 43.51346484825883, "lon": -80.25757823710077}, {"address": "39 Dovercliffe Road", "lat": 43.512289359810055, "lon": -80.25450395375732}, {"address": "41 Dovercliffe Road", "lat": 43.51224030396324, "lon": -80.25453146030767}, {"address": "43 Dovercliffe Road", "lat": 43.51218974424943, "lon": -80.25457772625771}, {"address": "45 Dovercliffe Road", "lat": 43.51213327312911, "lon": -80.25460173983632}, {"address": "47 Dovercliffe Road", "lat": 43.512085382488614, "lon": -80.2546173808841}, {"address": "49 Dovercliffe Road", "lat": 43.51203636774883, "lon": -80.25463807603532}, {"address": "51 Dovercliffe Road", "lat": 43.511974208479096, "lon": -80.25466800519415}, {"address": "53 Dovercliffe Road", "lat": 43.511918902575495, "lon": -80.25468015328333}, {"address": "55 Dovercliffe Road", "lat": 43.511869157797946, "lon": -80.25470682176405}, {"address": "57 Dovercliffe Road", "lat": 43.511809582667276, "lon": -80.25471975103169}, {"address": "59 Dovercliffe Road", "lat": 43.511754880658806, "lon": -80.2547463604249}, {"address": "61 Dovercliffe Road", "lat": 43.511703450799175, "lon": -80.25475680906665}, {"address": "63 Dovercliffe Road", "lat": 43.511641417623004, "lon": -80.25476630315956}, {"address": "65 Dovercliffe Road", "lat": 43.5116033572928, "lon": -80.25479568307568}, {"address": "67 Dovercliffe Road", "lat": 43.511477858464275, "lon": -80.25504626919421}, {"address": "69 Dovercliffe Road", "lat": 43.51148980940435, "lon": -80.25511793645498}, {"address": "71 Dovercliffe Road", "lat": 43.51151118474066, "lon": -80.25519328968107}, {"address": "73 Dovercliffe Road", "lat": 43.51151813630109, "lon": -80.25527171036592}, {"address": "75 Dovercliffe Road", "lat": 43.511523037440305, "lon": -80.2553567516598}, {"address": "77 Dovercliffe Road", "lat": 43.51154941190934, "lon": -80.25542535043213}, {"address": "79 Dovercliffe Road", "lat": 43.51158127834068, "lon": -80.25548362679736}, {"address": "81 Dovercliffe Road", "lat": 43.51162109295593, "lon": -80.25553501465784}, {"address": "83 Dovercliffe Road", "lat": 43.511652425431606, "lon": -80.25560367144753}, {"address": "85 Dovercliffe Road", "lat": 43.511677241175256, "lon": -80.25567532195414}, {"address": "87 Dovercliffe Road", "lat": 43.511801383980284, "lon": -80.25583017340156}, {"address": "89 Dovercliffe Road", "lat": 43.51184881095231, "lon": -80.25586238090423}, {"address": "91 Dovercliffe Road", "lat": 43.51189813403578, "lon": -80.25590383165894}, {"address": "93 Dovercliffe Road", "lat": 43.51193749876382, "lon": -80.25595197798228}, {"address": "95 Dovercliffe Road", "lat": 43.511986779696485, "lon": -80.25600024008853}, {"address": "97 Dovercliffe Road", "lat": 43.512029494248885, "lon": -80.25603708329592}, {"address": "99 Dovercliffe Road", "lat": 43.51208635883256, "lon": -80.25606159119678}, {"address": "101 Dovercliffe Road", "lat": 43.512140723296746, "lon": -80.25608947644582}, {"address": "103 Dovercliffe Road", "lat": 43.512185173330224, "lon": -80.25611724598272}, {"address": "105 Dovercliffe Road", "lat": 43.51224199576899, "lon": -80.2561485652672}, {"address": "107 Dovercliffe Road", "lat": 43.512325740830775, "lon": -80.25623551830284}, {"address": "109 Dovercliffe Road", "lat": 43.51237299977711, "lon": -80.25626475301198}, {"address": "111 Dovercliffe Road", "lat": 43.512422043346845, "lon": -80.25631225899313}, {"address": "113 Dovercliffe Road", "lat": 43.512465443055966, "lon": -80.25635187671824}, {"address": "115 Dovercliffe Road", "lat": 43.51252603240837, "lon": -80.25637344431208}, {"address": "117 Dovercliffe Road", "lat": 43.51256375554529, "lon": -80.25641038898216}, {"address": "119 Dovercliffe Road", "lat": 43.512616529186495, "lon": -80.25646836808532}, {"address": "121 Dovercliffe Road", "lat": 43.51266761637089, "lon": -80.25649243287576}, {"address": "123 Dovercliffe Road", "lat": 43.51270903686701, "lon": -80.25654506454147}, {"address": "125 Dovercliffe Road", "lat": 43.512761972273275, "lon": -80.25657697162693}, {"address": "127 Dovercliffe Road", "lat": 43.512858272874375, "lon": -80.2566310181871}, {"address": "129 Dovercliffe Road", "lat": 43.512907683847935, "lon": -80.25665944018037}, {"address": "131 Dovercliffe Road", "lat": 43.512957009777665, "lon": -80.25671162377358}, {"address": "133 Dovercliffe Road", "lat": 43.513000581921645, "lon": -80.25673069498269}, {"address": "135 Dovercliffe Road", "lat": 43.5130498764465, "lon": -80.25678788730947}, {"address": "137 Dovercliffe Road", "lat": 43.513101074350416, "lon": -80.25681389730511}, {"address": "139 Dovercliffe Road", "lat": 43.51315620271527, "lon": -80.25685599478443}, {"address": "141 Dovercliffe Road", "lat": 43.51320192484934, "lon": -80.2568844561766}, {"address": "143 Dovercliffe Road", "lat": 43.51325906756062, "lon": -80.25690094232122}, {"address": "145 Dovercliffe Road", "lat": 43.51330918198052, "lon": -80.25691541518698}, {"address": "147 Dovercliffe Road", "lat": 43.51336327879898, "lon": -80.25696505275951}, {"address": "149 Dovercliffe Road", "lat": 43.51341508443037, "lon": -80.25697401790919}, {"address": "151 Dovercliffe Road", "lat": 43.5135255963832, "lon": -80.2569916470746}, {"address": "153 Dovercliffe Road", "lat": 43.51357476884083, "lon": -80.25701829718786}, {"address": "155 Dovercliffe Road", "lat": 43.513631725322085, "lon": -80.25701374941953}, {"address": "157 Dovercliffe Road", "lat": 43.51369056276784, "lon": -80.25701183116291}, {"address": "159 Dovercliffe Road", "lat": 43.51375514224623, "lon": -80.25700215807554}, {"address": "161 Dovercliffe Road", "lat": 43.51382731107291, "lon": -80.2569925737228}, {"address": "5 Mayfair Court", "lat": 43.510823761784465, "lon": -80.25214033345046}, {"address": "7 Mayfair Court", "lat": 43.51075718468913, "lon": -80.252492592937}, {"address": "9 Mayfair Court", "lat": 43.5106620812409, "lon": -80.25272032860016}, {"address": "11 Mayfair Court", "lat": 43.51049754393605, "lon": -80.25290508885257}, {"address": "15 Mayfair Court", "lat": 43.510288620669044, "lon": -80.25281062764778}, {"address": "17 Mayfair Court", "lat": 43.510187050661024, "lon": -80.25260214084776}, {"address": "4 Mayfair Court", "lat": 43.51069842459256, "lon": -80.25178925887147}, {"address": "6 Mayfair Court", "lat": 43.51045997153871, "lon": -80.25177289145506}, {"address": "8 Mayfair Court", "lat": 43.510328535332874, "lon": -80.25182498724195}, {"address": "10 Mayfair Court", "lat": 43.510145191453766, "lon": -80.25190295805312}, {"address": "12 Mayfair Court", "lat": 43.510097979618365, "lon": -80.25207157530363}, {"address": "14 Mayfair Court", "lat": 43.51010213997222, "lon": -80.2524483326178}, {"address": "557 College Avenue West", "lat": 43.513983134771344, "lon": -80.25661993596185}, {"address": "559 College Avenue West", "lat": 43.51389135625109, "lon": -80.25661133305613}, {"address": "561 College Avenue West", "lat": 43.51380338714464, "lon": -80.2565990868081}, {"address": "563 College Avenue West", "lat": 43.51374744614042, "lon": -80.25659030631134}, {"address": "565 College Avenue West", "lat": 43.51364923732538, "lon": -80.25654979784355}, {"address": "567 College Avenue West", "lat": 43.51356922084503, "lon": -80.25651153316649}, {"address": "569 College Avenue West", "lat": 43.51347341598642, "lon": -80.25647363316895}, {"address": "571 College Avenue West", "lat": 43.51340840166933, "lon": -80.25644274140092}, {"address": "573 College Avenue West", "lat": 43.51334139192256, "lon": -80.25640186886402}, {"address": "575 College Avenue West", "lat": 43.51325815677, "lon": -80.25635175945024}, {"address": "577 College Avenue West", "lat": 43.51316531187716, "lon": -80.25627459660764}, {"address": "579 College Avenue West", "lat": 43.51309514482841, "lon": -80.25620086585394}, {"address": "581 College Avenue West", "lat": 43.5129964425349, "lon": -80.25610169251951}, {"address": "583 College Avenue West", "lat": 43.512930906779246, "lon": -80.25601711067137}, {"address": "585 College Avenue West", "lat": 43.51286644410483, "lon": -80.25593291914922}, {"address": "587 College Avenue West", "lat": 43.51280497605496, "lon": -80.25584428162318}, {"address": "589 College Avenue West", "lat": 43.51274110932495, "lon": -80.25575552405293}, {"address": "591 College Avenue West", "lat": 43.51268044143146, "lon": -80.25565952809403}, {"address": "593 College Avenue West", "lat": 43.51263457420796, "lon": -80.25556512700832}, {"address": "595 College Avenue West", "lat": 43.51259089893944, "lon": -80.25545640701931}, {"address": "597 College Avenue West", "lat": 43.512551393932625, "lon": -80.25534804047307}, {"address": "599 College Avenue West", "lat": 43.51251391143484, "lon": -80.25524441363514}, {"address": "601 College Avenue West", "lat": 43.51247652148312, "lon": -80.25514367339913}, {"address": "603 College Avenue West", "lat": 43.5124393199973, "lon": -80.25504354214279}, {"address": "605 College Avenue West", "lat": 43.5124024892884, "lon": -80.25494380853554}, {"address": "607 College Avenue West", "lat": 43.51236569601623, "lon": -80.25483850351199}, {"address": "651 College Avenue West", "lat": 43.511208203990115, "lon": -80.25271207221208}, {"address": "653 College Avenue West", "lat": 43.51109634814694, "lon": -80.25255494043957}, {"address": "667 College Avenue West", "lat": 43.51094278874213, "lon": -80.25242174105257}, {"address": "675 College Avenue West", "lat": 43.51072732736567, "lon": -80.25147259000966}, {"address": "687 College Avenue West", "lat": 43.51044230569293, "lon": -80.25069735574097}, {"address": "689 College Avenue West", "lat": 43.51037129783893, "lon": -80.25048175622776}, {"address": "691 College Avenue West", "lat": 43.51018553935976, "lon": -80.25021135056379}, {"address": "693 College Avenue West", "lat": 43.51010575397694, "lon": -80.25009730843725}, {"address": "96 Dovercliffe Road", "lat": 43.51141913882368, "lon": -80.25609823093033}, {"address": "3 Conroy Crescent", "lat": 43.51156107437806, "lon": -80.25300604456957}, {"address": "5 Conroy Crescent", "lat": 43.511498222507846, "lon": -80.25308977357774}, {"address": "7 Conroy Crescent", "lat": 43.51143801214462, "lon": -80.2531713926242}, {"address": "9 Conroy Crescent", "lat": 43.511378669565644, "lon": -80.25325036686849}, {"address": "11 Conroy Crescent", "lat": 43.51132040358943, "lon": -80.25333054382324}, {"address": "15 Conroy Crescent", "lat": 43.511261503845915, "lon": -80.25340950858627}, {"address": "17 Conroy Crescent", "lat": 43.511203679072025, "lon": -80.25348942617359}, {"address": "19 Conroy Crescent", "lat": 43.51114433956959, "lon": -80.2535689057613}, {"address": "21 Conroy Crescent", "lat": 43.51108562798755, "lon": -80.25364858158684}, {"address": "23 Conroy Crescent", "lat": 43.511027251210365, "lon": -80.25372865644752}, {"address": "25 Conroy Crescent", "lat": 43.51096827515429, "lon": -80.25380742219438}, {"address": "27 Conroy Crescent", "lat": 43.51091027036943, "lon": -80.25388794620132}, {"address": "29 Conroy Crescent", "lat": 43.51085030262058, "lon": -80.25396723109121}, {"address": "31 Conroy Crescent", "lat": 43.51079393769219, "lon": -80.25405042293846}, {"address": "33 Conroy Crescent", "lat": 43.5106524777003, "lon": -80.2541668200115}, {"address": "37 Conroy Crescent 1", "lat": 43.510416790570126, "lon": -80.25459165073846}, {"address": "37 Conroy Crescent 2", "lat": 43.510411266856124, "lon": -80.25454696349784}, {"address": "37 Conroy Crescent 3", "lat": 43.51040574222435, "lon": -80.25450227627663}, {"address": "37 Conroy Crescent 4", "lat": 43.51040021846745, "lon": -80.25445758781571}, {"address": "37 Conroy Crescent 5", "lat": 43.51039469470122, "lon": -80.25441290060022}, {"address": "37 Conroy Crescent 6", "lat": 43.51038917001719, "lon": -80.25436821340419}, {"address": "37 Conroy Crescent 7", "lat": 43.51038364620805, "lon": -80.2543235249684}, {"address": "37 Conroy Crescent 8", "lat": 43.51046738408311, "lon": -80.25457984419528}, {"address": "37 Conroy Crescent 9", "lat": 43.51046186036429, "lon": -80.2545351569185}, {"address": "37 Conroy Crescent 10", "lat": 43.51045633572766, "lon": -80.25449046966119}, {"address": "37 Conroy Crescent 11", "lat": 43.510450811965946, "lon": -80.25444578116411}, {"address": "37 Conroy Crescent 12", "lat": 43.51044528820293, "lon": -80.25440109514955}, {"address": "37 Conroy Crescent 13", "lat": 43.51043976350602, "lon": -80.25435640668034}, {"address": "37 Conroy Crescent 14", "lat": 43.51043423969206, "lon": -80.25431171820843}, {"address": "37 Conroy Crescent 15", "lat": 43.51042871496839, "lon": -80.25426703099305}, {"address": "41 Conroy Crescent", "lat": 43.51026294402938, "lon": -80.25412773519814}, {"address": "45 Conroy Crescent", "lat": 43.510118323587406, "lon": -80.25390435555602}, {"address": "53 Conroy Crescent 101", "lat": 43.5097364143039, "lon": -80.25383983973084}, {"address": "53 Conroy Crescent 102", "lat": 43.50975195488977, "lon": -80.25381820247591}, {"address": "53 Conroy Crescent 103", "lat": 43.50976749547952, "lon": -80.25379656644691}, {"address": "53 Conroy Crescent 104", "lat": 43.509783035156595, "lon": -80.25377492918086}, {"address": "53 Conroy Crescent 106", "lat": 43.50981411540655, "lon": -80.25373165584142}, {"address": "53 Conroy Crescent 107", "lat": 43.5098296559794, "lon": -80.25371001976801}, {"address": "53 Conroy Crescent 201", "lat": 43.50976091099345, "lon": -80.25387305203988}, {"address": "53 Conroy Crescent 202", "lat": 43.50977645159362, "lon": -80.25385141602159}, {"address": "53 Conroy Crescent 203", "lat": 43.50979199128924, "lon": -80.25382978000327}, {"address": "53 Conroy Crescent 204", "lat": 43.50980753187287, "lon": -80.25380814272573}, {"address": "53 Conroy Crescent 205", "lat": 43.509823071560035, "lon": -80.25378650668523}, {"address": "53 Conroy Crescent 206", "lat": 43.509838612135276, "lon": -80.25376486938548}, {"address": "53 Conroy Crescent 207", "lat": 43.50985415181399, "lon": -80.25374323332278}, {"address": "53 Conroy Crescent 208", "lat": 43.50986969238078, "lon": -80.25372159600082}, {"address": "53 Conroy Crescent 301", "lat": 43.50978540768153, "lon": -80.25390626561281}, {"address": "53 Conroy Crescent 302", "lat": 43.509800947387575, "lon": -80.25388462960522}, {"address": "53 Conroy Crescent 303", "lat": 43.50981648798165, "lon": -80.25386299233837}, {"address": "53 Conroy Crescent 304", "lat": 43.509832027679266, "lon": -80.25384135630857}, {"address": "53 Conroy Crescent 305", "lat": 43.50984756827298, "lon": -80.25381972025656}, {"address": "53 Conroy Crescent 306", "lat": 43.50986310885443, "lon": -80.25379808295642}, {"address": "53 Conroy Crescent 307", "lat": 43.509878648539384, "lon": -80.2537764468933}, {"address": "53 Conroy Crescent 308", "lat": 43.50989418911238, "lon": -80.25375480957094}, {"address": "57 Conroy Crescent 102", "lat": 43.509587615806865, "lon": -80.25354191739197}, {"address": "57 Conroy Crescent 101", "lat": 43.509569310888196, "lon": -80.25356740405086}, {"address": "57 Conroy Crescent 104", "lat": 43.50962422563471, "lon": -80.25349094526503}, {"address": "57 Conroy Crescent 103", "lat": 43.50960592072775, "lon": -80.25351643195472}, {"address": "57 Conroy Crescent 202", "lat": 43.509616470496816, "lon": -80.25358103878824}, {"address": "57 Conroy Crescent 201", "lat": 43.50959816556955, "lon": -80.2536065254477}, {"address": "57 Conroy Crescent 204", "lat": 43.50965308035001, "lon": -80.25353006789724}, {"address": "57 Conroy Crescent 203", "lat": 43.50963477542636, "lon": -80.25355555335045}, {"address": "57 Conroy Crescent 302", "lat": 43.509645325181616, "lon": -80.25362016145885}, {"address": "57 Conroy Crescent 301", "lat": 43.50962702024571, "lon": -80.25364564811883}, {"address": "57 Conroy Crescent 304", "lat": 43.509681935044, "lon": -80.2535691893297}, {"address": "57 Conroy Crescent 303", "lat": 43.509663630119796, "lon": -80.2535946760205}, {"address": "63 Conroy Crescent 1", "lat": 43.50906921257589, "lon": -80.25355226757911}, {"address": "63 Conroy Crescent 2", "lat": 43.50909424498594, "lon": -80.25352256992826}, {"address": "63 Conroy Crescent 3", "lat": 43.5091192764957, "lon": -80.25349287350096}, {"address": "63 Conroy Crescent 21", "lat": 43.50910283522428, "lon": -80.25360576591027}, {"address": "63 Conroy Crescent 22", "lat": 43.509127867656176, "lon": -80.25357606950169}, {"address": "63 Conroy Crescent 23", "lat": 43.50915289917165, "lon": -80.25354637184262}, {"address": "63 Conroy Crescent 24", "lat": 43.50917793067913, "lon": -80.25351667415894}, {"address": "63 Conroy Crescent 31", "lat": 43.509136457855924, "lon": -80.25365926553795}, {"address": "63 Conroy Crescent 32", "lat": 43.50916149029356, "lon": -80.25362956789758}, {"address": "63 Conroy Crescent 33", "lat": 43.509186521822805, "lon": -80.25359987024375}, {"address": "63 Conroy Crescent 34", "lat": 43.50921155334408, "lon": -80.25357017256532}, {"address": "63 Conroy Crescent 35", "lat": 43.50923658575768, "lon": -80.2535404748512}, {"address": "63 Conroy Crescent 36", "lat": 43.50926161727103, "lon": -80.25351077836065}, {"address": "63 Conroy Crescent 37", "lat": 43.50928664966863, "lon": -80.25348108059738}, {"address": "63 Conroy Crescent 41", "lat": 43.509170080454695, "lon": -80.25371276398808}, {"address": "63 Conroy Crescent 42", "lat": 43.509195112906134, "lon": -80.25368306635293}, {"address": "63 Conroy Crescent 43", "lat": 43.50922014445725, "lon": -80.25365336994139}, {"address": "63 Conroy Crescent 44", "lat": 43.5092451759923, "lon": -80.2536236722682}, {"address": "63 Conroy Crescent 45", "lat": 43.50927020841971, "lon": -80.25359397455935}, {"address": "63 Conroy Crescent 46", "lat": 43.509295239938744, "lon": -80.253564276837}, {"address": "63 Conroy Crescent 47", "lat": 43.50932027235017, "lon": -80.25353457907897}, {"address": "63 Conroy Crescent 48", "lat": 43.50934530386128, "lon": -80.25350488254449}, {"address": "63 Conroy Crescent 51", "lat": 43.5092037030287, "lon": -80.25376626249768}, {"address": "63 Conroy Crescent 52", "lat": 43.5092287354939, "lon": -80.25373656486782}, {"address": "63 Conroy Crescent 53", "lat": 43.509253767058816, "lon": -80.2537068684615}, {"address": "63 Conroy Crescent 54", "lat": 43.50927879950802, "lon": -80.25367717078245}, {"address": "63 Conroy Crescent 55", "lat": 43.50930383104886, "lon": -80.25364747308994}, {"address": "63 Conroy Crescent 56", "lat": 43.50932886258978, "lon": -80.25361777660986}, {"address": "63 Conroy Crescent 57", "lat": 43.509353895014996, "lon": -80.25358807885708}, {"address": "63 Conroy Crescent 58", "lat": 43.50937892653182, "lon": -80.25355838109081}, {"address": "73 Conroy Crescent", "lat": 43.50922221585201, "lon": -80.2527739010259}, {"address": "79 Conroy Crescent", "lat": 43.50908368518064, "lon": -80.2524921488006}, {"address": "83 Conroy Crescent", "lat": 43.50913578433536, "lon": -80.25221091939794}, {"address": "91 Conroy Crescent 102", "lat": 43.50904369520399, "lon": -80.25193424769418}, {"address": "91 Conroy Crescent 103", "lat": 43.509054752810066, "lon": -80.25189150826546}, {"address": "91 Conroy Crescent 104", "lat": 43.50906581040001, "lon": -80.2518487688213}, {"address": "91 Conroy Crescent 105", "lat": 43.50907686797388, "lon": -80.25180602936175}, {"address": "91 Conroy Crescent 106", "lat": 43.5090879255397, "lon": -80.2517632911238}, {"address": "91 Conroy Crescent 201", "lat": 43.508984249009444, "lon": -80.25195335317348}, {"address": "91 Conroy Crescent 202", "lat": 43.50899530663121, "lon": -80.25191061502724}, {"address": "91 Conroy Crescent 203", "lat": 43.50900636422878, "lon": -80.25186787562859}, {"address": "91 Conroy Crescent 204", "lat": 43.50901742181829, "lon": -80.25182513745155}, {"address": "91 Conroy Crescent 205", "lat": 43.509028479375544, "lon": -80.25178239678505}, {"address": "91 Conroy Crescent 206", "lat": 43.50903953693286, "lon": -80.25173965857716}, {"address": "91 Conroy Crescent 301", "lat": 43.50893586044022, "lon": -80.25192972051377}, {"address": "91 Conroy Crescent 302", "lat": 43.50894691805344, "lon": -80.25188698239762}, {"address": "91 Conroy Crescent 303", "lat": 43.508957975642474, "lon": -80.25184424302904}, {"address": "91 Conroy Crescent 304", "lat": 43.50896903322349, "lon": -80.25180150488207}, {"address": "91 Conroy Crescent 305", "lat": 43.508980090772205, "lon": -80.25175876424564}, {"address": "91 Conroy Crescent 306", "lat": 43.508991148320995, "lon": -80.25171602606785}, {"address": "91 Conroy Crescent 307", "lat": 43.50900220584558, "lon": -80.25167328663761}, {"address": "91 Conroy Crescent 308", "lat": 43.509013263362135, "lon": -80.25163054842898}, {"address": "91 Conroy Crescent 309", "lat": 43.5090243208545, "lon": -80.25158780896791}, {"address": "91 Conroy Crescent 310", "lat": 43.509035378330736, "lon": -80.25154506949144}, {"address": "91 Conroy Crescent 311", "lat": 43.50904643579091, "lon": -80.25150232999955}, {"address": "91 Conroy Crescent 312", "lat": 43.50905749323491, "lon": -80.25145959049225}, {"address": "91 Conroy Crescent 401", "lat": 43.50888747186592, "lon": -80.25190608789137}, {"address": "91 Conroy Crescent 402", "lat": 43.50889852947063, "lon": -80.2518633498053}, {"address": "91 Conroy Crescent 403", "lat": 43.508909587051164, "lon": -80.2518206104668}, {"address": "91 Conroy Crescent 404", "lat": 43.50892064462363, "lon": -80.25177787234989}, {"address": "91 Conroy Crescent 405", "lat": 43.50893170216382, "lon": -80.25173513174352}, {"address": "91 Conroy Crescent 406", "lat": 43.508942759704105, "lon": -80.2516923935958}, {"address": "91 Conroy Crescent 407", "lat": 43.50895381722016, "lon": -80.25164965419565}, {"address": "91 Conroy Crescent 408", "lat": 43.508964874728186, "lon": -80.2516069160171}, {"address": "91 Conroy Crescent 409", "lat": 43.508975932212046, "lon": -80.25156417658611}, {"address": "91 Conroy Crescent 410", "lat": 43.50898698967977, "lon": -80.2515214371397}, {"address": "91 Conroy Crescent 411", "lat": 43.508998047131364, "lon": -80.25147869767788}, {"address": "91 Conroy Crescent 412", "lat": 43.50900910456687, "lon": -80.25143595820066}, {"address": "91 Conroy Crescent 501", "lat": 43.50883908328665, "lon": -80.25188245530627}, {"address": "91 Conroy Crescent 502", "lat": 43.50885014088283, "lon": -80.25183971725026}, {"address": "91 Conroy Crescent 503", "lat": 43.508861198454824, "lon": -80.25179697794184}, {"address": "91 Conroy Crescent 504", "lat": 43.5088722560188, "lon": -80.251754239855}, {"address": "91 Conroy Crescent 505", "lat": 43.50888331355045, "lon": -80.25171149927873}, {"address": "91 Conroy Crescent 506", "lat": 43.50889437108218, "lon": -80.25166876116107}, {"address": "91 Conroy Crescent 507", "lat": 43.50890542858972, "lon": -80.25162602179098}, {"address": "91 Conroy Crescent 508", "lat": 43.508916486089255, "lon": -80.2515832836425}, {"address": "91 Conroy Crescent 509", "lat": 43.508927543564575, "lon": -80.25154054424159}, {"address": "91 Conroy Crescent 510", "lat": 43.508938601023736, "lon": -80.25149780482526}, {"address": "91 Conroy Crescent 511", "lat": 43.50894965846685, "lon": -80.25145506539353}, {"address": "91 Conroy Crescent 512", "lat": 43.508960715893835, "lon": -80.25141232594638}, {"address": "105 Conroy Crescent 102", "lat": 43.50920073882161, "lon": -80.25116390836149}, {"address": "105 Conroy Crescent 103", "lat": 43.509216413429485, "lon": -80.2511193684826}, {"address": "105 Conroy Crescent 104", "lat": 43.50923208801169, "lon": -80.25107482734384}, {"address": "105 Conroy Crescent 105", "lat": 43.50924776258443, "lon": -80.25103028741918}, {"address": "105 Conroy Crescent 106", "lat": 43.509263437123415, "lon": -80.25098574499764}, {"address": "105 Conroy Crescent 201", "lat": 43.50915985067056, "lon": -80.2511916999479}, {"address": "105 Conroy Crescent 202", "lat": 43.50917552528151, "lon": -80.25114715886924}, {"address": "105 Conroy Crescent 203", "lat": 43.509191198982684, "lon": -80.25110261901588}, {"address": "105 Conroy Crescent 204", "lat": 43.50920687355853, "lon": -80.25105807789147}, {"address": "105 Conroy Crescent 205", "lat": 43.50922254811682, "lon": -80.25101353674421}, {"address": "105 Conroy Crescent 206", "lat": 43.509238222657565, "lon": -80.25096899557407}, {"address": "105 Conroy Crescent 301", "lat": 43.509134636234, "lon": -80.25117495046622}, {"address": "105 Conroy Crescent 302", "lat": 43.50915031083863, "lon": -80.25113040940195}, {"address": "105 Conroy Crescent 303", "lat": 43.509165985425675, "lon": -80.25108586831482}, {"address": "105 Conroy Crescent 304", "lat": 43.50918165999521, "lon": -80.2510413272048}, {"address": "105 Conroy Crescent 305", "lat": 43.509197333654875, "lon": -80.2509967873201}, {"address": "105 Conroy Crescent 306", "lat": 43.50921300818926, "lon": -80.25095224616432}, {"address": "105 Conroy Crescent 307", "lat": 43.50922868270606, "lon": -80.2509077049857}, {"address": "105 Conroy Crescent 308", "lat": 43.509244357205304, "lon": -80.25086316378422}, {"address": "105 Conroy Crescent 309", "lat": 43.50926003168698, "lon": -80.25081862255983}, {"address": "105 Conroy Crescent 310", "lat": 43.509275705258865, "lon": -80.25077408256077}, {"address": "105 Conroy Crescent 311", "lat": 43.509291380605774, "lon": -80.25072954127953}, {"address": "105 Conroy Crescent 312", "lat": 43.50930705502666, "lon": -80.25068499874952}, {"address": "105 Conroy Crescent 401", "lat": 43.50910942178689, "lon": -80.25115819976138}, {"address": "105 Conroy Crescent 402", "lat": 43.50912509638517, "lon": -80.25111365871147}, {"address": "105 Conroy Crescent 403", "lat": 43.509140770973985, "lon": -80.25106911887575}, {"address": "105 Conroy Crescent 404", "lat": 43.50915644553712, "lon": -80.25102457778013}, {"address": "105 Conroy Crescent 405", "lat": 43.5091721200827, "lon": -80.25098003666163}, {"address": "105 Conroy Crescent 406", "lat": 43.50918779371039, "lon": -80.2509354955314}, {"address": "105 Conroy Crescent 407", "lat": 43.50920346822893, "lon": -80.25089095560419}, {"address": "105 Conroy Crescent 408", "lat": 43.509219142721825, "lon": -80.25084641441708}, {"address": "105 Conroy Crescent 409", "lat": 43.50923481719714, "lon": -80.25080187320711}, {"address": "105 Conroy Crescent 410", "lat": 43.509250491654925, "lon": -80.25075733197424}, {"address": "105 Conroy Crescent 411", "lat": 43.509266166095124, "lon": -80.25071279071852}, {"address": "105 Conroy Crescent 412", "lat": 43.50928184051778, "lon": -80.25066824943993}, {"address": "105 Conroy Crescent 501", "lat": 43.509084207345424, "lon": -80.25114145030736}, {"address": "105 Conroy Crescent 502", "lat": 43.50909988283768, "lon": -80.25109690926072}, {"address": "105 Conroy Crescent 503", "lat": 43.509115556519795, "lon": -80.25105236945053}, {"address": "105 Conroy Crescent 504", "lat": 43.50913123106847, "lon": -80.25100782713224}, {"address": "105 Conroy Crescent 505", "lat": 43.50914690561582, "lon": -80.2509632872652}, {"address": "105 Conroy Crescent 506", "lat": 43.50916258013748, "lon": -80.2509187461382}, {"address": "105 Conroy Crescent 507", "lat": 43.50917825374934, "lon": -80.25087420623652}, {"address": "105 Conroy Crescent 508", "lat": 43.50919392822778, "lon": -80.25082966382676}, {"address": "105 Conroy Crescent 509", "lat": 43.50920960269676, "lon": -80.25078512263117}, {"address": "105 Conroy Crescent 510", "lat": 43.50922527715627, "lon": -80.25074058264975}, {"address": "105 Conroy Crescent 511", "lat": 43.50924095159013, "lon": -80.2506960414084}, {"address": "105 Conroy Crescent 512", "lat": 43.509256626006405, "lon": -80.2506515001442}, {"address": "111 Conroy Crescent", "lat": 43.509793127953195, "lon": -80.25093074812472}, {"address": "115 Conroy Crescent", "lat": 43.50992988472084, "lon": -80.25087458291107}, {"address": "117 Conroy Crescent", "lat": 43.51000679865614, "lon": -80.25083770369392}, {"address": "119 Conroy Crescent", "lat": 43.510084780533745, "lon": -80.25080055755662}, {"address": "121 Conroy Crescent", "lat": 43.51016320503804, "lon": -80.25076335512368}, {"address": "123 Conroy Crescent", "lat": 43.510241296642164, "lon": -80.25072605650233}, {"address": "125 Conroy Crescent", "lat": 43.5103088828525, "lon": -80.25069560795396}, {"address": "8 Conroy Crescent", "lat": 43.51109198419436, "lon": -80.25273752456384}, {"address": "10 Conroy Crescent", "lat": 43.51102916124318, "lon": -80.25282013815271}, {"address": "12 Conroy Crescent", "lat": 43.51096605442869, "lon": -80.25290437946683}, {"address": "14 Conroy Crescent", "lat": 43.51090709838894, "lon": -80.25298240091654}, {"address": "16 Conroy Crescent", "lat": 43.51084385925668, "lon": -80.25306887288643}, {"address": "18 Conroy Crescent", "lat": 43.51078039236114, "lon": -80.25315453466946}, {"address": "20 Conroy Crescent", "lat": 43.510716405191324, "lon": -80.2532395432815}, {"address": "22 Conroy Crescent", "lat": 43.510652503701245, "lon": -80.2533263754637}, {"address": "40 Conroy Crescent", "lat": 43.510530608453536, "lon": -80.25364213904894}, {"address": "42 Conroy Crescent", "lat": 43.51046432241657, "lon": -80.25356704540285}, {"address": "44 Conroy Crescent", "lat": 43.51040627234931, "lon": -80.25348820328253}, {"address": "46 Conroy Crescent", "lat": 43.51034886956747, "lon": -80.25340686913434}, {"address": "48 Conroy Crescent", "lat": 43.51029144098219, "lon": -80.2533271078753}, {"address": "50 Conroy Crescent", "lat": 43.51023367249294, "lon": -80.25324618432646}, {"address": "52 Conroy Crescent", "lat": 43.51017439170088, "lon": -80.2531657459839}, {"address": "54 Conroy Crescent", "lat": 43.51011828492056, "lon": -80.25308449172785}, {"address": "56 Conroy Crescent", "lat": 43.51006030437615, "lon": -80.25300504098362}, {"address": "58 Conroy Crescent", "lat": 43.510002982025966, "lon": -80.25292476946856}, {"address": "60 Conroy Crescent", "lat": 43.50994294431351, "lon": -80.2528408350191}, {"address": "62 Conroy Crescent", "lat": 43.509880079341706, "lon": -80.25275333924633}, {"address": "64 Conroy Crescent", "lat": 43.50980878778783, "lon": -80.25265573503874}, {"address": "66 Conroy Crescent", "lat": 43.50974273622685, "lon": -80.25255421394502}, {"address": "72 Conroy Crescent", "lat": 43.50967967301849, "lon": -80.25242293643741}, {"address": "74 Conroy Crescent", "lat": 43.50962739004609, "lon": -80.25227080779852}, {"address": "82 Conroy Crescent", "lat": 43.509625056904945, "lon": -80.25212086352332}, {"address": "84 Conroy Crescent", "lat": 43.50964211612224, "lon": -80.25199447113145}, {"address": "92 Conroy Crescent", "lat": 43.50966018004054, "lon": -80.25187220200728}, {"address": "94 Conroy Crescent", "lat": 43.50969062683984, "lon": -80.25173980850307}, {"address": "100 Conroy Crescent", "lat": 43.50974511703246, "lon": -80.25159248366265}, {"address": "102 Conroy Crescent", "lat": 43.50983484963756, "lon": -80.25148848065228}, {"address": "108 Conroy Crescent", "lat": 43.50991136235832, "lon": -80.25142054630638}, {"address": "110 Conroy Crescent", "lat": 43.5099869258828, "lon": -80.25138023656605}, {"address": "114 Conroy Crescent", "lat": 43.51006408446987, "lon": -80.25134122951557}, {"address": "116 Conroy Crescent", "lat": 43.510140500315686, "lon": -80.2513014162661}, {"address": "118 Conroy Crescent", "lat": 43.51023391973222, "lon": -80.25126324843438}, {"address": "120 Conroy Crescent", "lat": 43.51031026040584, "lon": -80.25122323548294}, {"address": "122 Conroy Crescent", "lat": 43.510387526345404, "lon": -80.25118371822182}, {"address": "124 Conroy Crescent", "lat": 43.51046449653392, "lon": -80.2511440028593}, {"address": "126 Conroy Crescent", "lat": 43.51054120738944, "lon": -80.25110428812687}, {"address": "128 Conroy Crescent", "lat": 43.510612286063676, "lon": -80.25106663352314}, {"address": "1 Valeriote Place", "lat": 43.509908738205674, "lon": -80.24991800666271}, {"address": "3 Valeriote Place", "lat": 43.50985926296883, "lon": -80.25002224725964}, {"address": "5 Valeriote Place", "lat": 43.50981439582623, "lon": -80.25011492770504}, {"address": "7 Valeriote Place", "lat": 43.50976040925844, "lon": -80.25024909825721}, {"address": "9 Valeriote Place", "lat": 43.509680699988536, "lon": -80.25030977931418}, {"address": "11 Valeriote Place", "lat": 43.5095732341359, "lon": -80.25035891487724}, {"address": "15 Valeriote Place", "lat": 43.50945170295672, "lon": -80.25033667105691}, {"address": "2 Valeriote Place", "lat": 43.50943102025236, "lon": -80.24956172142713}, {"address": "4 Valeriote Place", "lat": 43.50934711951928, "lon": -80.24967489818059}, {"address": "6 Valeriote Place", "lat": 43.50926832666693, "lon": -80.24977241363015}, {"address": "8 Valeriote Place", "lat": 43.50925963113169, "lon": -80.24988849473449}, {"address": "10 Valeriote Place", "lat": 43.50924073549394, "lon": -80.25001116857976}, {"address": "12 Valeriote Place", "lat": 43.50928204056601, "lon": -80.25016381123963}, {"address": "14 Valeriote Place", "lat": 43.50936016062373, "lon": -80.25023618864613}, {"address": "553 College Avenue West", "lat": 43.5141967941701, "lon": -80.25662638455107}, {"address": "555 College Avenue West", "lat": 43.5141031334989, "lon": -80.25661552450323}, {"address": "63 Conroy Crescent", "lat": 43.50951258048139, "lon": -80.25319192539276}, {"address": "91 Conroy Crescent", "lat": 43.50924360414261, "lon": -80.25173531277302}, {"address": "53 Conroy Crescent", "lat": 43.509937163546404, "lon": -80.25366126056404}, {"address": "57 Conroy Crescent", "lat": 43.50975208537804, "lon": -80.2534308737213}, {"address": "37 Conroy Crescent", "lat": 43.51043035139033, "lon": -80.25417652796784}, {"address": "105 Conroy Crescent", "lat": 43.509480287024964, "lon": -80.25114832453067}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 400;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 38 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 38</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 152</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "38";
+const ZONE_NAME = "Zone 38";
+const ZONE_POLYGON = [[43.531672, -80.200539], [43.531043, -80.199671], [43.528941, -80.195291], [43.529932, -80.193453], [43.533421, -80.198215], [43.531709, -80.200616], [43.531672, -80.200539]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.531093288795006, -80.19709980553412];     // [lat, lon]
+const ADDRESSES = [{"address": "979 Victoria Road South", "lat": 43.53157847255637, "lon": -80.197130488573}, {"address": "1065 Victoria Road South", "lat": 43.52976889860961, "lon": -80.19408709686822}, {"address": "1005 Victoria Road South", "lat": 43.53168753151481, "lon": -80.19645312781098}, {"address": "1035 Victoria Road South", "lat": 43.530353596132315, "lon": -80.19549488812589}, {"address": "385 Macalister Boulevard", "lat": 43.53269909262134, "lon": -80.19855179555285}, {"address": "1035 Victoria Road South 39", "lat": 43.530713858463535, "lon": -80.1967823686025}, {"address": "1035 Victoria Road South 41", "lat": 43.53067921718434, "lon": -80.19673183073408}, {"address": "1035 Victoria Road South 43", "lat": 43.530638876277486, "lon": -80.1966723306385}, {"address": "1035 Victoria Road South 45", "lat": 43.53059907425749, "lon": -80.19662250740757}, {"address": "1035 Victoria Road South 47", "lat": 43.530560165009014, "lon": -80.19656621726031}, {"address": "1035 Victoria Road South 49", "lat": 43.53034834029866, "lon": -80.19629887380293}, {"address": "1035 Victoria Road South 51", "lat": 43.530391648985486, "lon": -80.1962460105537}, {"address": "1035 Victoria Road South 53", "lat": 43.53042932153961, "lon": -80.19619322208219}, {"address": "1035 Victoria Road South 55", "lat": 43.53047123475662, "lon": -80.19614231276648}, {"address": "1035 Victoria Road South 57", "lat": 43.530508934495636, "lon": -80.19609339736901}, {"address": "1035 Victoria Road South 59", "lat": 43.53055642840962, "lon": -80.19603466787655}, {"address": "1035 Victoria Road South 61", "lat": 43.530595523508666, "lon": -80.19598379701803}, {"address": "1035 Victoria Road South 63", "lat": 43.530637408497505, "lon": -80.19592901545046}, {"address": "1035 Victoria Road South 65", "lat": 43.530676503547966, "lon": -80.19587814445553}, {"address": "1035 Victoria Road South 67", "lat": 43.530966099288996, "lon": -80.19568353993961}, {"address": "1035 Victoria Road South 69", "lat": 43.530923423389616, "lon": -80.19562600809628}, {"address": "1035 Victoria Road South 71", "lat": 43.53087932571802, "lon": -80.19556655967217}, {"address": "1035 Victoria Road South 73", "lat": 43.53083522710679, "lon": -80.19550711010918}, {"address": "1035 Victoria Road South 58", "lat": 43.53083371602672, "lon": -80.19639410075415}, {"address": "1035 Victoria Road South 60", "lat": 43.53086720239393, "lon": -80.19634717672413}, {"address": "1035 Victoria Road South 62", "lat": 43.530902057835746, "lon": -80.19629442530643}, {"address": "1035 Victoria Road South 64", "lat": 43.53093973040564, "lon": -80.19624163641484}, {"address": "1035 Victoria Road South 66", "lat": 43.530980221003794, "lon": -80.19618881002987}, {"address": "1035 Victoria Road South 68", "lat": 43.531029055911674, "lon": -80.19612037956762}, {"address": "1035 Victoria Road South 70", "lat": 43.531064313436595, "lon": -80.1960748846177}, {"address": "1035 Victoria Road South 72", "lat": 43.53109745104825, "lon": -80.19602844999253}, {"address": "1035 Victoria Road South 74", "lat": 43.531128147346095, "lon": -80.19598543622887}, {"address": "1035 Victoria Road South 76", "lat": 43.531158898106426, "lon": -80.19595016892055}, {"address": "1035 Victoria Road South 78", "lat": 43.53119241242694, "lon": -80.19590711763242}, {"address": "1035 Victoria Road South 2", "lat": 43.53141350715639, "lon": -80.1960900969215}, {"address": "1035 Victoria Road South 4", "lat": 43.53137583466352, "lon": -80.19614288632401}, {"address": "1035 Victoria Road South 6", "lat": 43.53133955755654, "lon": -80.19619372031626}, {"address": "1035 Victoria Road South 8", "lat": 43.53130188411398, "lon": -80.19624650960175}, {"address": "1035 Victoria Road South 9", "lat": 43.53153179986678, "lon": -80.19661529050119}, {"address": "1035 Victoria Road South 10", "lat": 43.53126421154668, "lon": -80.19629929880956}, {"address": "1035 Victoria Road South 11", "lat": 43.53149778445918, "lon": -80.19665382987957}, {"address": "1035 Victoria Road South 12", "lat": 43.53123072520405, "lon": -80.19634622317685}, {"address": "1035 Victoria Road South 13", "lat": 43.53146101447295, "lon": -80.1967014425983}, {"address": "1035 Victoria Road South 14", "lat": 43.531169332310796, "lon": -80.19643224920847}, {"address": "1035 Victoria Road South 15", "lat": 43.53142572151517, "lon": -80.19675871848892}, {"address": "1035 Victoria Road South 16", "lat": 43.5311330550798, "lon": -80.19648308409134}, {"address": "1035 Victoria Road South 17", "lat": 43.531390811451466, "lon": -80.19680372481045}, {"address": "1035 Victoria Road South 18", "lat": 43.531092591557055, "lon": -80.1965397824247}, {"address": "1035 Victoria Road South 19", "lat": 43.5313470379803, "lon": -80.19685724072883}, {"address": "1035 Victoria Road South 20", "lat": 43.531057736903705, "lon": -80.1965925338585}, {"address": "1035 Victoria Road South 21", "lat": 43.53131076055195, "lon": -80.1969080742731}, {"address": "1035 Victoria Road South 23", "lat": 43.53127163784114, "lon": -80.19695507189097}, {"address": "1035 Victoria Road South 25", "lat": 43.53098291032407, "lon": -80.19717322318165}, {"address": "1035 Victoria Road South 27", "lat": 43.530948788154035, "lon": -80.19712977916413}, {"address": "1035 Victoria Road South 29", "lat": 43.53091556965427, "lon": -80.19708115882482}, {"address": "1035 Victoria Road South 31", "lat": 43.53088231486665, "lon": -80.19702737464098}, {"address": "1035 Victoria Road South 33", "lat": 43.53084251209064, "lon": -80.1969775497507}, {"address": "1035 Victoria Road South 35", "lat": 43.53081205627668, "lon": -80.1969211469804}, {"address": "1035 Victoria Road South 37", "lat": 43.530749430596615, "lon": -80.19683160215534}, {"address": "1035 Victoria Road South 83", "lat": 43.53048134850056, "lon": -80.19566711069099}, {"address": "1035 Victoria Road South 85", "lat": 43.530445226271084, "lon": -80.1957119003782}, {"address": "1035 Victoria Road South 87", "lat": 43.53040598083103, "lon": -80.19576544641201}, {"address": "1035 Victoria Road South 89", "lat": 43.53036198284205, "lon": -80.19581833773985}, {"address": "1035 Victoria Road South 91", "lat": 43.53031434250612, "lon": -80.19587633280918}, {"address": "1035 Victoria Road South 93", "lat": 43.53027221218443, "lon": -80.19592797893115}, {"address": "1035 Victoria Road South 95", "lat": 43.530235766707875, "lon": -80.19597329608682}, {"address": "1035 Victoria Road South 97", "lat": 43.53019703829815, "lon": -80.19602611835101}, {"address": "1035 Victoria Road South 99", "lat": 43.53015141168324, "lon": -80.19607393839885}, {"address": "1035 Victoria Road South 80", "lat": 43.530545780688726, "lon": -80.19490400595267}, {"address": "1035 Victoria Road South 82", "lat": 43.53050518086382, "lon": -80.19496527691462}, {"address": "1035 Victoria Road South 84", "lat": 43.53046611439293, "lon": -80.19502002153988}, {"address": "1035 Victoria Road South 86", "lat": 43.530423859879434, "lon": -80.19507047084419}, {"address": "1035 Victoria Road South 88", "lat": 43.53038638601713, "lon": -80.19512736358982}, {"address": "1035 Victoria Road South 90", "lat": 43.53034722696146, "lon": -80.19516909506365}, {"address": "1035 Victoria Road South 92", "lat": 43.530308159489415, "lon": -80.19522383942638}, {"address": "1035 Victoria Road South 94", "lat": 43.530269061453595, "lon": -80.19527424524853}, {"address": "1035 Victoria Road South 96", "lat": 43.53023155696072, "lon": -80.19532680049272}, {"address": "1035 Victoria Road South 98", "lat": 43.530197177589514, "lon": -80.19537497525405}, {"address": "1035 Victoria Road South 100", "lat": 43.53016439174405, "lon": -80.19542529697326}, {"address": "1035 Victoria Road South 102", "lat": 43.53012532414549, "lon": -80.19548004100528}, {"address": "1035 Victoria Road South 101", "lat": 43.5299600960903, "lon": -80.19587387395028}, {"address": "1035 Victoria Road South 103", "lat": 43.52991969512031, "lon": -80.19583521379512}, {"address": "1035 Victoria Road South 105", "lat": 43.52987928379683, "lon": -80.19579508362017}, {"address": "1035 Victoria Road South 107", "lat": 43.529846230856315, "lon": -80.19575343996435}, {"address": "1035 Victoria Road South 109", "lat": 43.52980635947518, "lon": -80.19571403782032}, {"address": "1035 Victoria Road South 111", "lat": 43.52976587959675, "lon": -80.19566813679211}, {"address": "1035 Victoria Road South 113", "lat": 43.52971045456288, "lon": -80.19560496525067}, {"address": "1035 Victoria Road South 115", "lat": 43.529677938250806, "lon": -80.19556550389869}, {"address": "1035 Victoria Road South 117", "lat": 43.52963707188605, "lon": -80.19553481019845}, {"address": "1035 Victoria Road South 119", "lat": 43.52959083509363, "lon": -80.19548974084113}, {"address": "1035 Victoria Road South 121", "lat": 43.52954298339066, "lon": -80.19543961909508}, {"address": "1035 Victoria Road South 123", "lat": 43.52949618970077, "lon": -80.19538950316333}, {"address": "1035 Victoria Road South 125", "lat": 43.52944358043724, "lon": -80.19534006483205}, {"address": "1035 Victoria Road South 127", "lat": 43.52939327625061, "lon": -80.19528372140758}, {"address": "1035 Victoria Road South 128", "lat": 43.529988062261594, "lon": -80.19526062972471}, {"address": "1035 Victoria Road South 130", "lat": 43.53002406477581, "lon": -80.19521894053368}, {"address": "1035 Victoria Road South 132", "lat": 43.53005216325589, "lon": -80.19517518696782}, {"address": "1035 Victoria Road South 134", "lat": 43.5300865425438, "lon": -80.19512701221088}, {"address": "1035 Victoria Road South 136", "lat": 43.5301178272108, "lon": -80.19508755504793}, {"address": "1035 Victoria Road South 138", "lat": 43.53015848727317, "lon": -80.19503495778615}, {"address": "1035 Victoria Road South 140", "lat": 43.53020383637513, "lon": -80.19497579225282}, {"address": "1035 Victoria Road South 142", "lat": 43.53023977769936, "lon": -80.19492542828331}, {"address": "1035 Victoria Road South 144", "lat": 43.53027415687863, "lon": -80.19487725323515}, {"address": "1035 Victoria Road South 146", "lat": 43.53031478719606, "lon": -80.19482031844885}, {"address": "1035 Victoria Road South 148", "lat": 43.53034919687675, "lon": -80.19477648051898}, {"address": "1035 Victoria Road South 150", "lat": 43.530388325238405, "lon": -80.19473041155139}, {"address": "1035 Victoria Road South 129", "lat": 43.52964866758121, "lon": -80.1950222185459}, {"address": "1035 Victoria Road South 131", "lat": 43.52969242312042, "lon": -80.19496090528594}, {"address": "1035 Victoria Road South 133", "lat": 43.52973149047378, "lon": -80.19490616131819}, {"address": "1035 Victoria Road South 135", "lat": 43.529767432664656, "lon": -80.19485579645561}, {"address": "1035 Victoria Road South 137", "lat": 43.52980962509942, "lon": -80.19479667317067}, {"address": "1035 Victoria Road South 139", "lat": 43.52985344161885, "lon": -80.19474403522634}, {"address": "1035 Victoria Road South 141", "lat": 43.52989253941506, "lon": -80.1946936281778}, {"address": "1035 Victoria Road South 143", "lat": 43.529930074178836, "lon": -80.19464541128798}, {"address": "1035 Victoria Road South 145", "lat": 43.52998011031305, "lon": -80.19457967627145}, {"address": "1035 Victoria Road South 147", "lat": 43.53001761537124, "lon": -80.19452712201546}, {"address": "1035 Victoria Road South 151", "lat": 43.53012078290729, "lon": -80.19438693379249}, {"address": "1035 Victoria Road South 149", "lat": 43.53005511949544, "lon": -80.1944745664689}, {"address": "1035 Victoria Road South 75", "lat": 43.5307612154605, "lon": -80.1954015802021}, {"address": "1035 Victoria Road South 77", "lat": 43.53071853942948, "lon": -80.19534404998979}, {"address": "1035 Victoria Road South 79", "lat": 43.530674441604184, "lon": -80.1952846007349}, {"address": "1035 Victoria Road South 81", "lat": 43.53063034285663, "lon": -80.19522515281602}, {"address": "355 Macalister Boulevard 1", "lat": 43.53151504057351, "lon": -80.199685640413}, {"address": "355 Macalister Boulevard 2", "lat": 43.53155487539702, "lon": -80.19963653600811}, {"address": "355 Macalister Boulevard 3", "lat": 43.53159515945776, "lon": -80.19958562367376}, {"address": "355 Macalister Boulevard 4", "lat": 43.53163237040669, "lon": -80.19953407495836}, {"address": "355 Macalister Boulevard 5", "lat": 43.53167356754211, "lon": -80.19947713203123}, {"address": "355 Macalister Boulevard 6", "lat": 43.5317395402469, "lon": -80.1993914611297}, {"address": "355 Macalister Boulevard 7", "lat": 43.531772659045075, "lon": -80.19934921975499}, {"address": "355 Macalister Boulevard 8", "lat": 43.53181317480784, "lon": -80.19929348233212}, {"address": "355 Macalister Boulevard 9", "lat": 43.53185072907515, "lon": -80.19923684716358}, {"address": "355 Macalister Boulevard", "lat": 43.532217100755496, "lon": -80.19929695602573}, {"address": "355 Macalister Boulevard 10", "lat": 43.5318913610391, "lon": -80.1991872947704}, {"address": "355 Macalister Boulevard 11", "lat": 43.53192495530526, "lon": -80.1991416001934}, {"address": "355 Macalister Boulevard 12", "lat": 43.53199104553579, "lon": -80.19904510797664}, {"address": "355 Macalister Boulevard 13", "lat": 43.53202735792558, "lon": -80.19899643055945}, {"address": "355 Macalister Boulevard 14", "lat": 43.53207176288536, "lon": -80.19893394703718}, {"address": "355 Macalister Boulevard 15", "lat": 43.53210636600265, "lon": -80.19889191943486}, {"address": "355 Macalister Boulevard 16", "lat": 43.532147855074136, "lon": -80.1988308109584}, {"address": "355 Macalister Boulevard 17", "lat": 43.53217836644367, "lon": -80.19878335857489}, {"address": "355 Macalister Boulevard 18", "lat": 43.53225948278154, "lon": -80.19903512471704}, {"address": "355 Macalister Boulevard 19", "lat": 43.53230287872244, "lon": -80.19909234624508}, {"address": "355 Macalister Boulevard 20", "lat": 43.53233900591445, "lon": -80.19914615049726}, {"address": "355 Macalister Boulevard 21", "lat": 43.53237937932975, "lon": -80.19920083548979}, {"address": "355 Macalister Boulevard 22", "lat": 43.53208798310341, "lon": -80.1993173903678}, {"address": "355 Macalister Boulevard 23", "lat": 43.532119973077755, "lon": -80.19936468261764}, {"address": "355 Macalister Boulevard 24", "lat": 43.53215386035488, "lon": -80.19941199437193}, {"address": "355 Macalister Boulevard 25", "lat": 43.53219058698145, "lon": -80.19946064111501}, {"address": "355 Macalister Boulevard 26", "lat": 43.53185331106829, "lon": -80.19963310409796}, {"address": "355 Macalister Boulevard 27", "lat": 43.53188905134155, "lon": -80.19968543818634}, {"address": "355 Macalister Boulevard 28", "lat": 43.53192388531612, "lon": -80.1997425960751}, {"address": "355 Macalister Boulevard 29", "lat": 43.53195786778712, "lon": -80.19979491145261}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 152;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

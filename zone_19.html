@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 19 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 19</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 167</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "19";
+const ZONE_NAME = "Zone 19";
+const ZONE_POLYGON = [[43.51555, -80.239436], [43.514167, -80.237395], [43.516397, -80.233821], [43.516934, -80.23489], [43.515647, -80.236985], [43.516494, -80.238108], [43.51555, -80.239436]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.51559116103303, -80.23679715987191];     // [lat, lon]
+const ADDRESSES = [{"address": "125 Cole Road 10", "lat": 43.515563111174465, "lon": -80.23662464078637}, {"address": "414 Stone Road West 9", "lat": 43.51597838983403, "lon": -80.2377277483032}, {"address": "414 Stone Road West 37", "lat": 43.514887191972115, "lon": -80.2366402731996}, {"address": "125 Cole Road 21", "lat": 43.51571307586616, "lon": -80.23571650404888}, {"address": "125 Cole Road 54", "lat": 43.516269922452786, "lon": -80.23500716812765}, {"address": "414 Stone Road West 35", "lat": 43.5150458067889, "lon": -80.23648651550984}, {"address": "125 Cole Road 57", "lat": 43.51638836190102, "lon": -80.23485141591074}, {"address": "125 Cole Road 65", "lat": 43.51599165665695, "lon": -80.23480764075948}, {"address": "125 Cole Road 18", "lat": 43.51559172160298, "lon": -80.23609258955756}, {"address": "414 Stone Road West 23", "lat": 43.51555531951707, "lon": -80.23714789836141}, {"address": "125 Cole Road 79", "lat": 43.51546333868161, "lon": -80.23552602685582}, {"address": "414 Stone Road West 43", "lat": 43.51493296220779, "lon": -80.23709636686992}, {"address": "414 Stone Road West 58", "lat": 43.515585054627415, "lon": -80.23798999115857}, {"address": "414 Stone Road West 5", "lat": 43.51608209994961, "lon": -80.2379622771704}, {"address": "125 Cole Road 34", "lat": 43.51600170868051, "lon": -80.235512504347}, {"address": "414 Stone Road West 27", "lat": 43.51533262301279, "lon": -80.23686479576472}, {"address": "414 Stone Road West 21", "lat": 43.51548200836685, "lon": -80.237235956882}, {"address": "125 Cole Road 56", "lat": 43.516349966512834, "lon": -80.23489898180203}, {"address": "125 Cole Road 81", "lat": 43.515392951778125, "lon": -80.2356125024858}, {"address": "414 Stone Road West 10", "lat": 43.515948318323666, "lon": -80.23768573690933}, {"address": "414 Stone Road West 69", "lat": 43.51594221197042, "lon": -80.23850664143386}, {"address": "414 Stone Road West 70", "lat": 43.515975393600506, "lon": -80.23846759053534}, {"address": "414 Stone Road West 53", "lat": 43.51541327214442, "lon": -80.23774999989492}, {"address": "125 Cole Road 50", "lat": 43.51612101448736, "lon": -80.23521275820313}, {"address": "125 Cole Road 30", "lat": 43.5161560753304, "lon": -80.23571935582362}, {"address": "125 Cole Road 3", "lat": 43.51530009572957, "lon": -80.23626600579719}, {"address": "414 Stone Road West 68", "lat": 43.51590685185873, "lon": -80.23855442878734}, {"address": "414 Stone Road West 41", "lat": 43.514748557324715, "lon": -80.23683314726277}, {"address": "125 Cole Road 19", "lat": 43.515550780778405, "lon": -80.2360353954135}, {"address": "414 Stone Road West 49", "lat": 43.515141457161945, "lon": -80.23738764242285}, {"address": "125 Cole Road 48", "lat": 43.51667980210044, "lon": -80.2349725463462}, {"address": "414 Stone Road West 39", "lat": 43.514821833223785, "lon": -80.23675064375867}, {"address": "414 Stone Road West 24", "lat": 43.515589969594075, "lon": -80.23710106838989}, {"address": "125 Cole Road 43", "lat": 43.51648769603329, "lon": -80.23523219449254}, {"address": "125 Cole Road 15", "lat": 43.51570517406648, "lon": -80.23623788254756}, {"address": "125 Cole Road 49", "lat": 43.51608419409099, "lon": -80.23526252342099}, {"address": "125 Cole Road 63", "lat": 43.516060467773485, "lon": -80.23471896358672}, {"address": "414 Stone Road West 67", "lat": 43.51587361689387, "lon": -80.23860224132852}, {"address": "414 Stone Road West 34", "lat": 43.51509201663117, "lon": -80.23653426472038}, {"address": "414 Stone Road West 72", "lat": 43.51604502449717, "lon": -80.2383763832062}, {"address": "125 Cole Road 13", "lat": 43.51577768567475, "lon": -80.23632598276401}, {"address": "414 Stone Road West 40", "lat": 43.51478517825377, "lon": -80.23679467273874}, {"address": "414 Stone Road West 61", "lat": 43.5156988734362, "lon": -80.23814900429721}, {"address": "125 Cole Road 36", "lat": 43.51593242398252, "lon": -80.23541571432075}, {"address": "125 Cole Road 24", "lat": 43.515823300346305, "lon": -80.235870488296}, {"address": "414 Stone Road West 19", "lat": 43.515416649962106, "lon": -80.23734632912513}, {"address": "125 Cole Road 42", "lat": 43.516455704933655, "lon": -80.23527110502232}, {"address": "414 Stone Road West 55", "lat": 43.515479631544885, "lon": -80.23784859786743}, {"address": "125 Cole Road 64", "lat": 43.516025274191456, "lon": -80.23476220171001}, {"address": "414 Stone Road West 7", "lat": 43.51604648373012, "lon": -80.23783408547125}, {"address": "125 Cole Road 27", "lat": 43.515927226791185, "lon": -80.2360156739481}, {"address": "125 Cole Road 62", "lat": 43.516102116273686, "lon": -80.23465834310763}, {"address": "414 Stone Road West 28", "lat": 43.51529449881812, "lon": -80.2368171372219}, {"address": "414 Stone Road West 20", "lat": 43.51544932917811, "lon": -80.23729114303327}, {"address": "125 Cole Road 46", "lat": 43.51660928517539, "lon": -80.2350808404796}, {"address": "125 Cole Road 40", "lat": 43.51638201169612, "lon": -80.23537936427567}, {"address": "125 Cole Road 20", "lat": 43.51551141505903, "lon": -80.23598040111105}, {"address": "414 Stone Road West 29", "lat": 43.515260450963915, "lon": -80.23676396984638}, {"address": "414 Stone Road West 30", "lat": 43.51522436580268, "lon": -80.23671355634745}, {"address": "125 Cole Road 29", "lat": 43.51618914332506, "lon": -80.23576555136707}, {"address": "125 Cole Road 53", "lat": 43.51623465067171, "lon": -80.23506349755027}, {"address": "414 Stone Road West 63", "lat": 43.51573600498948, "lon": -80.23878341652988}, {"address": "414 Stone Road West 46", "lat": 43.515039214798996, "lon": -80.23724480563041}, {"address": "125 Cole Road 14", "lat": 43.51574144276627, "lon": -80.23627975055717}, {"address": "125 Cole Road 67", "lat": 43.51592759485256, "lon": -80.23489855284787}, {"address": "125 Cole Road 45", "lat": 43.51656611367623, "lon": -80.23513053422184}, {"address": "125 Cole Road 61", "lat": 43.51614213815244, "lon": -80.2346042499038}, {"address": "125 Cole Road 17", "lat": 43.515632714846596, "lon": -80.23614105673146}, {"address": "125 Cole Road 1", "lat": 43.51522763652471, "lon": -80.23616917935087}, {"address": "414 Stone Road West 33", "lat": 43.51512409360304, "lon": -80.23657907678331}, {"address": "414 Stone Road West 54", "lat": 43.51544590725451, "lon": -80.23780148327772}, {"address": "125 Cole Road 2", "lat": 43.51526067766685, "lon": -80.23621973856255}, {"address": "414 Stone Road West 4", "lat": 43.51611210404687, "lon": -80.23801540031377}, {"address": "414 Stone Road West 57", "lat": 43.515550276087815, "lon": -80.23794140373033}, {"address": "414 Stone Road West 66", "lat": 43.515830791121026, "lon": -80.23865432418211}, {"address": "414 Stone Road West 2", "lat": 43.51619038963544, "lon": -80.23810796519192}, {"address": "414 Stone Road West 36", "lat": 43.51501172564387, "lon": -80.23643890295422}, {"address": "414 Stone Road West 47", "lat": 43.515077337909, "lon": -80.23729246302054}, {"address": "125 Cole Road 37", "lat": 43.51626834844638, "lon": -80.23553298766531}, {"address": "414 Stone Road West 59", "lat": 43.515620868195064, "lon": -80.23804297149623}, {"address": "125 Cole Road 52", "lat": 43.516194680942654, "lon": -80.23510886340877}, {"address": "414 Stone Road West 6", "lat": 43.516052028524584, "lon": -80.23792026558759}, {"address": "414 Stone Road West 44", "lat": 43.51497101904899, "lon": -80.2371551353809}, {"address": "125 Cole Road 77", "lat": 43.51553057613831, "lon": -80.2354351527488}, {"address": "125 Cole Road 76", "lat": 43.51556899750275, "lon": -80.23538322371334}, {"address": "125 Cole Road 6", "lat": 43.51541667064555, "lon": -80.23642006211138}, {"address": "125 Cole Road 7", "lat": 43.515454461931846, "lon": -80.23647285683084}, {"address": "414 Stone Road West 48", "lat": 43.5151114187021, "lon": -80.2373400761126}, {"address": "125 Cole Road 31", "lat": 43.51611985883915, "lon": -80.23566876075168}, {"address": "125 Cole Road 59", "lat": 43.51622533125386, "lon": -80.23450046279491}, {"address": "125 Cole Road 9", "lat": 43.51552846930161, "lon": -80.2365762454497}, {"address": "125 Cole Road 74", "lat": 43.515639435708735, "lon": -80.23528802052807}, {"address": "125 Cole Road 68", "lat": 43.515893976353546, "lon": -80.23494399052255}, {"address": "125 Cole Road 28", "lat": 43.51596501736194, "lon": -80.23606846886459}, {"address": "414 Stone Road West 38", "lat": 43.514850502994626, "lon": -80.236689856706}, {"address": "414 Stone Road West 32", "lat": 43.51516017971508, "lon": -80.23662948887015}, {"address": "125 Cole Road 66", "lat": 43.51595643731203, "lon": -80.2348552417047}, {"address": "125 Cole Road 16", "lat": 43.51567373384912, "lon": -80.23618516106838}, {"address": "414 Stone Road West 3", "lat": 43.51615019453001, "lon": -80.23806861477442}, {"address": "125 Cole Road 22", "lat": 43.51574299358664, "lon": -80.23575829972238}, {"address": "125 Cole Road 41", "lat": 43.516422007269384, "lon": -80.23532963425865}, {"address": "414 Stone Road West 51", "lat": 43.51520560950912, "lon": -80.23747726511922}, {"address": "414 Stone Road West 71", "lat": 43.516011789609095, "lon": -80.23842419595424}, {"address": "414 Stone Road West 62", "lat": 43.51572838128665, "lon": -80.2381902309944}, {"address": "414 Stone Road West 14", "lat": 43.51572358493871, "lon": -80.2374053843267}, {"address": "125 Cole Road 8", "lat": 43.515489103848026, "lon": -80.23652125204922}, {"address": "414 Stone Road West 13", "lat": 43.51576642196237, "lon": -80.2373419795994}, {"address": "125 Cole Road 60", "lat": 43.51618213428826, "lon": -80.23455451956738}, {"address": "125 Cole Road 26", "lat": 43.51589258466317, "lon": -80.23596727867535}, {"address": "125 Cole Road 38", "lat": 43.51630834408874, "lon": -80.2354832578432}, {"address": "414 Stone Road West 11", "lat": 43.51591012809103, "lon": -80.23764918883599}, {"address": "125 Cole Road 72", "lat": 43.515703524465756, "lon": -80.23519274513126}, {"address": "414 Stone Road West 15", "lat": 43.51568689653671, "lon": -80.23745496805483}, {"address": "414 Stone Road West 25", "lat": 43.51540479497365, "lon": -80.23696562192343}, {"address": "125 Cole Road 44", "lat": 43.51652771818112, "lon": -80.23517810131617}, {"address": "414 Stone Road West 17", "lat": 43.51562571478324, "lon": -80.23754316566662}, {"address": "414 Stone Road West 60", "lat": 43.51565986210296, "lon": -80.238097448557}, {"address": "125 Cole Road 73", "lat": 43.5156746818746, "lon": -80.23523605593286}, {"address": "125 Cole Road 39", "lat": 43.51634836635903, "lon": -80.235429164993}, {"address": "414 Stone Road West 12", "lat": 43.51587203740638, "lon": -80.23759597361362}, {"address": "125 Cole Road 32", "lat": 43.516082068085716, "lon": -80.2356159659536}, {"address": "125 Cole Road 5", "lat": 43.51537730510933, "lon": -80.23636506767681}, {"address": "414 Stone Road West 42", "lat": 43.51470983008179, "lon": -80.23688548557459}, {"address": "125 Cole Road 35", "lat": 43.51596706634166, "lon": -80.23546410930618}, {"address": "414 Stone Road West 1", "lat": 43.516230518293355, "lon": -80.23815842595357}, {"address": "125 Cole Road 82", "lat": 43.515359332994585, "lon": -80.23565794059986}, {"address": "414 Stone Road West 50", "lat": 43.51517353289404, "lon": -80.23743245375296}, {"address": "414 Stone Road West 8", "lat": 43.516010399044376, "lon": -80.2377836719173}, {"address": "125 Cole Road 80", "lat": 43.515424943006295, "lon": -80.23557359282556}, {"address": "125 Cole Road 33", "lat": 43.516042675511116, "lon": -80.23556533438932}, {"address": "125 Cole Road 12", "lat": 43.51563396907835, "lon": -80.23672363142539}, {"address": "125 Cole Road 47", "lat": 43.51664298181673, "lon": -80.23502231217267}, {"address": "125 Cole Road 4", "lat": 43.51534106221621, "lon": -80.23631883574872}, {"address": "125 Cole Road 51", "lat": 43.516162585139824, "lon": -80.2351652280601}, {"address": "125 Cole Road 69", "lat": 43.51586035784418, "lon": -80.2349894293839}, {"address": "125 Cole Road 58", "lat": 43.51643158562339, "lon": -80.23479299495645}, {"address": "414 Stone Road West 16", "lat": 43.515654283615845, "lon": -80.23749904409149}, {"address": "125 Cole Road 75", "lat": 43.51560421706614, "lon": -80.23533562214273}, {"address": "125 Cole Road 78", "lat": 43.51549535652389, "lon": -80.2354827529665}, {"address": "125 Cole Road 25", "lat": 43.515856368280524, "lon": -80.23591668367153}, {"address": "125 Cole Road 11", "lat": 43.51559775302706, "lon": -80.23667303617842}, {"address": "414 Stone Road West 64", "lat": 43.51576219681748, "lon": -80.23874992372221}, {"address": "414 Stone Road West 31", "lat": 43.51519426078152, "lon": -80.2366771016497}, {"address": "414 Stone Road West 52", "lat": 43.51524774255392, "lon": -80.23753052529419}, {"address": "125 Cole Road 70", "lat": 43.51582516505674, "lon": -80.23503266719555}, {"address": "414 Stone Road West 18", "lat": 43.51558909269969, "lon": -80.23758163905688}, {"address": "125 Cole Road 23", "lat": 43.51578235941175, "lon": -80.23581329408712}, {"address": "414 Stone Road West 22", "lat": 43.51551669254798, "lon": -80.23718357130731}, {"address": "414 Stone Road West 56", "lat": 43.51552076815674, "lon": -80.23790017851286}, {"address": "414 Stone Road West 65", "lat": 43.51579648524287, "lon": -80.23870358405838}, {"address": "414 Stone Road West 45", "lat": 43.51500710491784, "lon": -80.23720554892559}, {"address": "414 Stone Road West 26", "lat": 43.51536670397398, "lon": -80.23691240757516}, {"address": "125 Cole Road 55", "lat": 43.51631789654801, "lon": -80.23495098376009}, {"address": "125 Cole Road 71", "lat": 43.515751550131476, "lon": -80.23512783438822}, {"address": "650 Scottsdale Drive 1", "lat": 43.51493098713897, "lon": -80.23789058761231}, {"address": "650 Scottsdale Drive 2A", "lat": 43.51488391112031, "lon": -80.23782857555204}, {"address": "650 Scottsdale Drive 2B", "lat": 43.514840957556686, "lon": -80.23775729671478}, {"address": "650 Scottsdale Drive 2C", "lat": 43.51479388057432, "lon": -80.23769528609884}, {"address": "650 Scottsdale Drive 3", "lat": 43.51473331529028, "lon": -80.23762194400105}, {"address": "650 Scottsdale Drive 4", "lat": 43.51468623913556, "lon": -80.23755993358907}, {"address": "650 Scottsdale Drive 5", "lat": 43.51464328540612, "lon": -80.23748865517544}, {"address": "650 Scottsdale Drive 6", "lat": 43.51459620827122, "lon": -80.23742664373353}, {"address": "620 Scottsdale Drive", "lat": 43.51543138197889, "lon": -80.23882185062757}, {"address": "630 Scottsdale Drive", "lat": 43.515107631162785, "lon": -80.23833241530436}, {"address": "650 Scottsdale Drive", "lat": 43.51475834663742, "lon": -80.23751790848857}, {"address": "414 Stone Road West", "lat": 43.51546950545462, "lon": -80.23763305684575}, {"address": "125 Cole Road", "lat": 43.51678274788697, "lon": -80.23493788734415}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 167;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

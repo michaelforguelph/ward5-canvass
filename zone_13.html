@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 13 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 13</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 313</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "13";
+const ZONE_NAME = "Zone 13";
+const ZONE_POLYGON = [[43.536133, -80.238435], [43.534267, -80.24113], [43.533843, -80.240659], [43.532597, -80.242349], [43.530454, -80.239274], [43.530023, -80.239684], [43.528556, -80.237426], [43.532187, -80.232593], [43.536133, -80.238435]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.532380983989036, -80.23761844116065];     // [lat, lon]
+const ADDRESSES = [{"address": "63 College Avenue West", "lat": 43.52920323461959, "lon": -80.2368509350625}, {"address": "4 Caledonia Street", "lat": 43.5331430318244, "lon": -80.239950312135}, {"address": "8 Caledonia Street", "lat": 43.532956898776945, "lon": -80.2400512467159}, {"address": "12 Caledonia Street", "lat": 43.53282012690867, "lon": -80.24023743496186}, {"address": "16 Caledonia Street", "lat": 43.53273884182172, "lon": -80.24054838974006}, {"address": "20 Caledonia Street", "lat": 43.53258627097719, "lon": -80.24036623902292}, {"address": "24 Caledonia Street", "lat": 43.53244208126353, "lon": -80.2401634051405}, {"address": "3 Caledonia Street", "lat": 43.53351411020784, "lon": -80.2403744637448}, {"address": "5 Caledonia Street", "lat": 43.53336656350704, "lon": -80.24054887610299}, {"address": "7 Caledonia Street", "lat": 43.53322934415432, "lon": -80.24073451070953}, {"address": "9 Caledonia Street", "lat": 43.53309095761197, "lon": -80.24092218880018}, {"address": "11 Caledonia Street", "lat": 43.53295028832299, "lon": -80.24118816252896}, {"address": "15 Caledonia Street", "lat": 43.532683178595576, "lon": -80.24133593553198}, {"address": "19 Caledonia Street", "lat": 43.532457112420595, "lon": -80.24111597748481}, {"address": "21 Caledonia Street", "lat": 43.532314118121974, "lon": -80.24086502050494}, {"address": "23 Caledonia Street", "lat": 43.53217909630745, "lon": -80.2406762615945}, {"address": "25 Caledonia Street", "lat": 43.532045333886295, "lon": -80.24048845427863}, {"address": "5 Dean Avenue", "lat": 43.534509510278106, "lon": -80.23689835944306}, {"address": "17 Dean Avenue", "lat": 43.5338304201402, "lon": -80.23781123980002}, {"address": "21 Dean Avenue", "lat": 43.53366428683091, "lon": -80.23803516702648}, {"address": "25 Dean Avenue", "lat": 43.533502877613024, "lon": -80.23825396300793}, {"address": "27 Dean Avenue", "lat": 43.53334632880492, "lon": -80.23846605434323}, {"address": "31 Dean Avenue", "lat": 43.533189619563146, "lon": -80.23867642383036}, {"address": "33 Dean Avenue", "lat": 43.53303593014537, "lon": -80.23888614781205}, {"address": "35 Dean Avenue", "lat": 43.53287871366301, "lon": -80.2390979422773}, {"address": "37 Dean Avenue", "lat": 43.532720150965176, "lon": -80.23931249014731}, {"address": "41 Dean Avenue", "lat": 43.53262276854392, "lon": -80.23960945132144}, {"address": "45 Dean Avenue", "lat": 43.53246545364699, "lon": -80.23979554362184}, {"address": "49 Dean Avenue", "lat": 43.5322500504686, "lon": -80.23994844805057}, {"address": "55 Dean Avenue", "lat": 43.53191013118161, "lon": -80.2403002104353}, {"address": "12 Fairview Boulevard", "lat": 43.53594477772934, "lon": -80.23840253075323}, {"address": "14 Fairview Boulevard", "lat": 43.53580346556489, "lon": -80.23859324970876}, {"address": "16 Fairview Boulevard", "lat": 43.53565972293124, "lon": -80.23878465802063}, {"address": "18 Fairview Boulevard", "lat": 43.53551623633933, "lon": -80.23897575773292}, {"address": "20 Fairview Boulevard", "lat": 43.53537237251829, "lon": -80.23916569539945}, {"address": "22 Fairview Boulevard", "lat": 43.53524217228891, "lon": -80.23939150353415}, {"address": "24 Fairview Boulevard", "lat": 43.535095844446424, "lon": -80.23958810909753}, {"address": "26 Fairview Boulevard", "lat": 43.534961981072165, "lon": -80.2397678314618}, {"address": "30 Fairview Boulevard", "lat": 43.53483451319962, "lon": -80.23994079680818}, {"address": "32 Fairview Boulevard", "lat": 43.534729995130114, "lon": -80.24007815567865}, {"address": "34 Fairview Boulevard", "lat": 43.53465155505438, "lon": -80.24018437912584}, {"address": "36 Fairview Boulevard", "lat": 43.53457573958593, "lon": -80.24028626357575}, {"address": "38 Fairview Boulevard", "lat": 43.534443885737595, "lon": -80.24040228581141}, {"address": "40 Fairview Boulevard", "lat": 43.53439258251526, "lon": -80.2405383724118}, {"address": "2 Forest Street", "lat": 43.53368303422137, "lon": -80.24064781207417}, {"address": "4 Forest Street", "lat": 43.533513767682244, "lon": -80.24087830864237}, {"address": "6 Forest Street", "lat": 43.53335325741638, "lon": -80.24109444909129}, {"address": "8 Forest Street", "lat": 43.53317430773554, "lon": -80.24133864986138}, {"address": "10 Forest Street", "lat": 43.533016003673225, "lon": -80.24155399908292}, {"address": "14 Forest Street", "lat": 43.53285997499197, "lon": -80.24176764788935}, {"address": "16 Forest Street", "lat": 43.53269394071584, "lon": -80.24199084653286}, {"address": "2 Harcourt Drive", "lat": 43.53409341626123, "lon": -80.2403708949998}, {"address": "4 Harcourt Drive", "lat": 43.53421597984218, "lon": -80.24016115719587}, {"address": "6 Harcourt Drive", "lat": 43.53436856150118, "lon": -80.23997299233716}, {"address": "8 Harcourt Drive", "lat": 43.53451605656018, "lon": -80.23977429370964}, {"address": "10 Harcourt Drive", "lat": 43.53466273613066, "lon": -80.2395751501395}, {"address": "12 Harcourt Drive", "lat": 43.53480959755939, "lon": -80.23937564934532}, {"address": "16 Harcourt Drive", "lat": 43.53495672612832, "lon": -80.23917751182694}, {"address": "18 Harcourt Drive", "lat": 43.53509924355459, "lon": -80.23897927786113}, {"address": "20 Harcourt Drive", "lat": 43.535245444525984, "lon": -80.23877486401611}, {"address": "24 Harcourt Drive", "lat": 43.53556463280264, "lon": -80.2385117470161}, {"address": "34 Harcourt Drive", "lat": 43.535566297364184, "lon": -80.2378592853142}, {"address": "36 Harcourt Drive", "lat": 43.53523985141146, "lon": -80.23755902535636}, {"address": "40 Harcourt Drive", "lat": 43.53504523158228, "lon": -80.23728858926081}, {"address": "44 Harcourt Drive", "lat": 43.53478076729258, "lon": -80.23702476460493}, {"address": "3 Harcourt Drive", "lat": 43.533769387420165, "lon": -80.23983958981117}, {"address": "5 Harcourt Drive", "lat": 43.533949242812675, "lon": -80.23962117422124}, {"address": "7 Harcourt Drive", "lat": 43.53409486252908, "lon": -80.23942341307382}, {"address": "9 Harcourt Drive", "lat": 43.53424136053362, "lon": -80.23922467828285}, {"address": "11 Harcourt Drive", "lat": 43.5344082516861, "lon": -80.23899805694636}, {"address": "15 Harcourt Drive", "lat": 43.53457474430619, "lon": -80.23877250374271}, {"address": "21 Harcourt Drive", "lat": 43.5347286527871, "lon": -80.23855704348688}, {"address": "25 Harcourt Drive", "lat": 43.53491859349919, "lon": -80.23823624369832}, {"address": "35 Harcourt Drive", "lat": 43.53475041012113, "lon": -80.23798098540051}, {"address": "45 Harcourt Drive", "lat": 43.53436354975477, "lon": -80.23773000661977}, {"address": "47 Harcourt Drive", "lat": 43.53403964202319, "lon": -80.23756710245976}, {"address": "90 Mary Street", "lat": 43.534278256554394, "lon": -80.24068606778417}, {"address": "124 Mary Street", "lat": 43.533602375805316, "lon": -80.23959359313923}, {"address": "128 Mary Street", "lat": 43.53375702678138, "lon": -80.23935090995276}, {"address": "130 Mary Street", "lat": 43.53391361569125, "lon": -80.23913891671869}, {"address": "132 Mary Street", "lat": 43.53407012837371, "lon": -80.23892662383305}, {"address": "136 Mary Street", "lat": 43.53422634462769, "lon": -80.23871422713611}, {"address": "148 Mary Street", "lat": 43.53454848967626, "lon": -80.23822645683066}, {"address": "127 Mary Street", "lat": 43.53300026783297, "lon": -80.23959031099105}, {"address": "129 Mary Street", "lat": 43.53312493579794, "lon": -80.23924803862808}, {"address": "131 Mary Street", "lat": 43.53331239401015, "lon": -80.23906369625274}, {"address": "133 Mary Street", "lat": 43.53344032845328, "lon": -80.23889094788565}, {"address": "135 Mary Street", "lat": 43.53357691316045, "lon": -80.23870470504528}, {"address": "137 Mary Street", "lat": 43.53371362553197, "lon": -80.23852104763483}, {"address": "139 Mary Street", "lat": 43.53384966649455, "lon": -80.23833612926899}, {"address": "141 Mary Street", "lat": 43.53399634594233, "lon": -80.23813734087226}, {"address": "143 Mary Street", "lat": 43.53415213150107, "lon": -80.23792687606418}, {"address": "72 Talbot Street", "lat": 43.53254046240128, "lon": -80.24172161592526}, {"address": "70 Talbot Street", "lat": 43.53238723310459, "lon": -80.24150657317041}, {"address": "68 Talbot Street", "lat": 43.53223349402431, "lon": -80.24129265544191}, {"address": "66 Talbot Street", "lat": 43.53207974375392, "lon": -80.24107711273587}, {"address": "64 Talbot Street", "lat": 43.531927104002314, "lon": -80.24086221930197}, {"address": "62 Talbot Street", "lat": 43.53177176436331, "lon": -80.24061288902594}, {"address": "4 Borden Street", "lat": 43.5332720852158, "lon": -80.23708286973138}, {"address": "6 Borden Street", "lat": 43.5331507867412, "lon": -80.23691204464869}, {"address": "8 Borden Street", "lat": 43.533029571533206, "lon": -80.23674294071927}, {"address": "10 Borden Street", "lat": 43.53290868042128, "lon": -80.23657251779436}, {"address": "16 Borden Street", "lat": 43.532539099368975, "lon": -80.23614130561596}, {"address": "3 Borden Street", "lat": 43.53297901513912, "lon": -80.23756201083982}, {"address": "5 Borden Street", "lat": 43.53288296168271, "lon": -80.23742711094393}, {"address": "9 Borden Street", "lat": 43.53276703764595, "lon": -80.23726590157428}, {"address": "11 Borden Street", "lat": 43.53263006652373, "lon": -80.23707332368531}, {"address": "29 Borden Street", "lat": 43.531532176687875, "lon": -80.23544876503378}, {"address": "32 Caledonia Street", "lat": 43.53173541432743, "lon": -80.23922272319098}, {"address": "34 Caledonia Street", "lat": 43.531606489984554, "lon": -80.23904165149087}, {"address": "36 Caledonia Street", "lat": 43.5314730618446, "lon": -80.2388545532445}, {"address": "42 Caledonia Street", "lat": 43.530882690951636, "lon": -80.2378118164473}, {"address": "44 Caledonia Street", "lat": 43.530778439605434, "lon": -80.23766424985799}, {"address": "46 Caledonia Street", "lat": 43.530681750500165, "lon": -80.23752799391542}, {"address": "48 Caledonia Street", "lat": 43.530557074882616, "lon": -80.23735402234355}, {"address": "50 Caledonia Street", "lat": 43.53033435109906, "lon": -80.23728246763176}, {"address": "52 Caledonia Street", "lat": 43.53021163110743, "lon": -80.23710867462627}, {"address": "29 Caledonia Street", "lat": 43.531532131362106, "lon": -80.23981694759313}, {"address": "31 Caledonia Street", "lat": 43.531418995722944, "lon": -80.23965858944892}, {"address": "33 Caledonia Street", "lat": 43.5313066032207, "lon": -80.23950098490488}, {"address": "37 Caledonia Street", "lat": 43.53096365106556, "lon": -80.2390196734766}, {"address": "1 College Avenue West", "lat": 43.53201254046144, "lon": -80.23333716254163}, {"address": "5 College Avenue West", "lat": 43.53189236789594, "lon": -80.233500238785}, {"address": "7 College Avenue West", "lat": 43.531726499168435, "lon": -80.23367923166553}, {"address": "9 College Avenue West", "lat": 43.53148332840457, "lon": -80.23379740096573}, {"address": "11 College Avenue West", "lat": 43.53138495994444, "lon": -80.23390634802122}, {"address": "13 College Avenue West", "lat": 43.53132046837062, "lon": -80.23402248573571}, {"address": "15 College Avenue West", "lat": 43.53123121872532, "lon": -80.23414171857435}, {"address": "17 College Avenue West", "lat": 43.531139487244076, "lon": -80.23429763202803}, {"address": "21 College Avenue West", "lat": 43.53102663741755, "lon": -80.23464685997538}, {"address": "29 College Avenue West", "lat": 43.53068329818762, "lon": -80.23488690866357}, {"address": "31 College Avenue West", "lat": 43.53060522742959, "lon": -80.2350005152492}, {"address": "33 College Avenue West", "lat": 43.530559807987544, "lon": -80.23517716622018}, {"address": "35 College Avenue West", "lat": 43.53045311356029, "lon": -80.23532309883889}, {"address": "37 College Avenue West", "lat": 43.53034858544368, "lon": -80.23546554335924}, {"address": "39 College Avenue West", "lat": 43.53025703669462, "lon": -80.23562966759104}, {"address": "43 College Avenue West", "lat": 43.530098851599426, "lon": -80.23584451358093}, {"address": "45 College Avenue West", "lat": 43.530014213933825, "lon": -80.23596120797698}, {"address": "47 College Avenue West", "lat": 43.529919010067125, "lon": -80.23610261811798}, {"address": "55 College Avenue West", "lat": 43.52964210941172, "lon": -80.23645653004299}, {"address": "6 Crawford Street", "lat": 43.53367973468565, "lon": -80.23638654150362}, {"address": "8 Crawford Street", "lat": 43.53356682517515, "lon": -80.23622189793817}, {"address": "3 Crawford Street", "lat": 43.533499208004145, "lon": -80.23679614872857}, {"address": "5 Crawford Street", "lat": 43.53339769617245, "lon": -80.23655875602108}, {"address": "7 Crawford Street", "lat": 43.53324497316575, "lon": -80.23634681842196}, {"address": "9 Crawford Street", "lat": 43.5331718450166, "lon": -80.23623607842299}, {"address": "11 Crawford Street", "lat": 43.53300788364503, "lon": -80.23608066132417}, {"address": "10 Dean Avenue", "lat": 43.5340193926756, "lon": -80.23677523550033}, {"address": "14 Dean Avenue", "lat": 43.53374078146324, "lon": -80.23713945010569}, {"address": "16 Dean Avenue", "lat": 43.53360387064171, "lon": -80.23729869485453}, {"address": "24 Dean Avenue", "lat": 43.53318894224339, "lon": -80.23772234420323}, {"address": "28 Dean Avenue", "lat": 43.53299428925205, "lon": -80.23799316267704}, {"address": "30 Dean Avenue", "lat": 43.532896144305894, "lon": -80.23812097891245}, {"address": "34 Dean Avenue", "lat": 43.53266925428303, "lon": -80.23842611462253}, {"address": "36 Dean Avenue", "lat": 43.532572987155305, "lon": -80.23855785627116}, {"address": "38 Dean Avenue", "lat": 43.53247447397845, "lon": -80.23869023712926}, {"address": "40 Dean Avenue", "lat": 43.532376203497726, "lon": -80.23882595973751}, {"address": "44 Dean Avenue", "lat": 43.53221056150802, "lon": -80.2391903151526}, {"address": "46 Dean Avenue", "lat": 43.53206830343509, "lon": -80.23933015350593}, {"address": "56 Dean Avenue", "lat": 43.53167787653477, "lon": -80.23993157261052}, {"address": "325 Gordon Street", "lat": 43.53442316626203, "lon": -80.2362613418461}, {"address": "329 Gordon Street", "lat": 43.53419080102905, "lon": -80.23589183322976}, {"address": "335 Gordon Street", "lat": 43.533842121737024, "lon": -80.2354669623075}, {"address": "337 Gordon Street", "lat": 43.5337603484778, "lon": -80.23529641417528}, {"address": "341 Gordon Street", "lat": 43.5336652986629, "lon": -80.2351819181346}, {"address": "343 Gordon Street", "lat": 43.53349234432922, "lon": -80.23480220789054}, {"address": "345 Gordon Street", "lat": 43.533278350874184, "lon": -80.23452196789579}, {"address": "349 Gordon Street", "lat": 43.533126865063224, "lon": -80.23435617586793}, {"address": "351 Gordon Street", "lat": 43.532930176427925, "lon": -80.23412107365574}, {"address": "353 Gordon Street", "lat": 43.53283909489159, "lon": -80.23395651152258}, {"address": "355 Gordon Street", "lat": 43.53273003154752, "lon": -80.23377190552375}, {"address": "357 Gordon Street", "lat": 43.53261823395695, "lon": -80.2336315866534}, {"address": "359 Gordon Street", "lat": 43.53249831276508, "lon": -80.23353091385897}, {"address": "363 Gordon Street", "lat": 43.53235373684361, "lon": -80.2332074477889}, {"address": "367 Gordon Street", "lat": 43.5322753584716, "lon": -80.2330966448368}, {"address": "2 Graham Street", "lat": 43.53226412887097, "lon": -80.23853345819451}, {"address": "6 Graham Street", "lat": 43.532168097503515, "lon": -80.23839805435276}, {"address": "8 Graham Street", "lat": 43.53205913704745, "lon": -80.2382447089008}, {"address": "10 Graham Street", "lat": 43.531948723275804, "lon": -80.23809098379016}, {"address": "12 Graham Street", "lat": 43.53184964458027, "lon": -80.23795034511082}, {"address": "14 Graham Street", "lat": 43.53175150917524, "lon": -80.23781278650583}, {"address": "3 Graham Street", "lat": 43.531936375500706, "lon": -80.23896699058604}, {"address": "5 Graham Street", "lat": 43.531807047516565, "lon": -80.2387864820658}, {"address": "9 Graham Street", "lat": 43.53166792102804, "lon": -80.2385909903666}, {"address": "11 Graham Street", "lat": 43.53152691793639, "lon": -80.23829821444582}, {"address": "1 Hales Crescent", "lat": 43.531339609193296, "lon": -80.2348792996848}, {"address": "5 Hales Crescent", "lat": 43.53180656355113, "lon": -80.2344568818735}, {"address": "7 Hales Crescent", "lat": 43.532000955123884, "lon": -80.23437951882985}, {"address": "9 Hales Crescent", "lat": 43.53219979582139, "lon": -80.23439859074686}, {"address": "11 Hales Crescent", "lat": 43.5323471853909, "lon": -80.2345121732668}, {"address": "15 Hales Crescent", "lat": 43.532491854428876, "lon": -80.23464360851739}, {"address": "17 Hales Crescent", "lat": 43.53266250662395, "lon": -80.23490243440281}, {"address": "19 Hales Crescent", "lat": 43.53264020349164, "lon": -80.23519397342677}, {"address": "21 Hales Crescent", "lat": 43.532562909718564, "lon": -80.23544305287432}, {"address": "23 Hales Crescent", "lat": 43.53243329754683, "lon": -80.23558347378638}, {"address": "25 Hales Crescent", "lat": 43.53230115106322, "lon": -80.23577731861594}, {"address": "27 Hales Crescent", "lat": 43.53202856073075, "lon": -80.23617149395693}, {"address": "29 Hales Crescent", "lat": 43.53187277087766, "lon": -80.23638084080123}, {"address": "31 Hales Crescent", "lat": 43.53172021170619, "lon": -80.23658781419526}, {"address": "33 Hales Crescent", "lat": 43.53156827550076, "lon": -80.23679442102285}, {"address": "35 Hales Crescent", "lat": 43.53142826930662, "lon": -80.23704781911489}, {"address": "37 Hales Crescent", "lat": 43.53118714960662, "lon": -80.23725935206134}, {"address": "39 Hales Crescent", "lat": 43.53095608853398, "lon": -80.23715429084953}, {"address": "41 Hales Crescent", "lat": 43.53082893828386, "lon": -80.2368915907501}, {"address": "4 Hales Crescent", "lat": 43.531806301627626, "lon": -80.23502943239376}, {"address": "8 Hales Crescent", "lat": 43.53201277638379, "lon": -80.23494494460238}, {"address": "20 Hales Crescent", "lat": 43.53219652489808, "lon": -80.23517448190435}, {"address": "24 Hales Crescent", "lat": 43.532024462572544, "lon": -80.23539956681657}, {"address": "26 Hales Crescent", "lat": 43.53173358456031, "lon": -80.2357465176526}, {"address": "28 Hales Crescent", "lat": 43.53159315731005, "lon": -80.23593655982536}, {"address": "30 Hales Crescent", "lat": 43.53145976939982, "lon": -80.23611490250444}, {"address": "32 Hales Crescent", "lat": 43.53132558556477, "lon": -80.23629558603704}, {"address": "34 Hales Crescent", "lat": 43.5311842796615, "lon": -80.23645370106088}, {"address": "19 Moore Avenue", "lat": 43.531395768585845, "lon": -80.2356330277348}, {"address": "21 Moore Avenue", "lat": 43.53126084181677, "lon": -80.23581291090882}, {"address": "23 Moore Avenue", "lat": 43.53112578764714, "lon": -80.23599573536437}, {"address": "25 Moore Avenue", "lat": 43.53098207728961, "lon": -80.23619134222626}, {"address": "29 Moore Avenue", "lat": 43.53072273049404, "lon": -80.23654503983819}, {"address": "33 Moore Avenue", "lat": 43.53058810116758, "lon": -80.23672532112884}, {"address": "45 Moore Avenue", "lat": 43.53044782308858, "lon": -80.23695469141288}, {"address": "14 Moore Avenue", "lat": 43.5311288964887, "lon": -80.23502115984597}, {"address": "16 Moore Avenue", "lat": 43.5309563442535, "lon": -80.23537974054832}, {"address": "20 Moore Avenue", "lat": 43.53079141243389, "lon": -80.2354921869034}, {"address": "24 Moore Avenue", "lat": 43.53067598730286, "lon": -80.2356376072989}, {"address": "28 Moore Avenue", "lat": 43.530571240579405, "lon": -80.2357804085103}, {"address": "30 Moore Avenue", "lat": 43.53048012962236, "lon": -80.23594381946266}, {"address": "32 Moore Avenue", "lat": 43.530369362762315, "lon": -80.2360965280768}, {"address": "34 Moore Avenue", "lat": 43.53024775236848, "lon": -80.23626022139379}, {"address": "40 Moore Avenue", "lat": 43.53009266605141, "lon": -80.23645333228419}, {"address": "46 Moore Avenue", "lat": 43.529919153959135, "lon": -80.23669295278444}, {"address": "4 Mutual Street", "lat": 43.53273692483108, "lon": -80.23776098784532}, {"address": "6 Mutual Street", "lat": 43.532593636410944, "lon": -80.23756113713985}, {"address": "8 Mutual Street", "lat": 43.53249847543786, "lon": -80.23742734316842}, {"address": "12 Mutual Street", "lat": 43.53228786369443, "lon": -80.2372694568486}, {"address": "3 Mutual Street", "lat": 43.53246008262329, "lon": -80.23826820254861}, {"address": "5 Mutual Street", "lat": 43.53236528868208, "lon": -80.23813409868607}, {"address": "7 Mutual Street", "lat": 43.53227057741301, "lon": -80.23800120952305}, {"address": "9 Mutual Street", "lat": 43.53217497185275, "lon": -80.23786696696664}, {"address": "11 Mutual Street", "lat": 43.53207613361813, "lon": -80.23772921241417}, {"address": "54 Talbot Street", "lat": 43.53119614982694, "lon": -80.23985117647811}, {"address": "50 Talbot Street", "lat": 43.53104083406161, "lon": -80.23962215140868}, {"address": "46 Talbot Street", "lat": 43.530853908159465, "lon": -80.23937127697145}, {"address": "5 University Avenue West", "lat": 43.53344104491208, "lon": -80.23548221492861}, {"address": "9 University Avenue West", "lat": 43.53324639119872, "lon": -80.23577220008971}, {"address": "17 University Avenue West", "lat": 43.53279565026544, "lon": -80.23641390464027}, {"address": "21 University Avenue West", "lat": 43.53249093748212, "lon": -80.23687788530845}, {"address": "29 University Avenue West", "lat": 43.53238571301496, "lon": -80.23713728542704}, {"address": "35 University Avenue West", "lat": 43.53196343943955, "lon": -80.23757105417172}, {"address": "55 University Avenue West", "lat": 43.531273796923244, "lon": -80.23864481581577}, {"address": "59 University Avenue West", "lat": 43.530742146173814, "lon": -80.23921417265791}, {"address": "4 University Avenue West", "lat": 43.5333240170514, "lon": -80.23510269190943}, {"address": "6 University Avenue West", "lat": 43.53316074544415, "lon": -80.23530646609585}, {"address": "10 University Avenue West", "lat": 43.533000457829175, "lon": -80.2354874033977}, {"address": "14 University Avenue West", "lat": 43.53282432272934, "lon": -80.23575605872921}, {"address": "16 University Avenue West", "lat": 43.53264237617705, "lon": -80.2359712952632}, {"address": "20 University Avenue West", "lat": 43.53221851254638, "lon": -80.23642746488419}, {"address": "22 University Avenue West", "lat": 43.532074697470925, "lon": -80.2366239468785}, {"address": "24 University Avenue West", "lat": 43.53191292084431, "lon": -80.23684274420833}, {"address": "28 University Avenue West", "lat": 43.531745225363956, "lon": -80.2370697781091}, {"address": "30 University Avenue West", "lat": 43.531624949926254, "lon": -80.23723443038807}, {"address": "32 University Avenue West", "lat": 43.53147693293335, "lon": -80.23743185004811}, {"address": "36 University Avenue West", "lat": 43.531329982023856, "lon": -80.23762850904801}, {"address": "38 University Avenue West", "lat": 43.5312327976786, "lon": -80.23776097341508}, {"address": "40 University Avenue West", "lat": 43.53110282109085, "lon": -80.23793698719889}, {"address": "44 University Avenue West", "lat": 43.530941065511826, "lon": -80.23815364982056}, {"address": "41 Caledonia Street", "lat": 43.53045998364971, "lon": -80.23833590466788}, {"address": "43 Caledonia Street", "lat": 43.53040034794244, "lon": -80.23814225913308}, {"address": "45 Caledonia Street", "lat": 43.530307856200636, "lon": -80.23799383472328}, {"address": "47 Caledonia Street", "lat": 43.530075986643006, "lon": -80.23804404960694}, {"address": "49 Caledonia Street", "lat": 43.52998954339386, "lon": -80.23791785314175}, {"address": "53 Caledonia Street", "lat": 43.52979127178018, "lon": -80.23743686802199}, {"address": "55 Caledonia Street", "lat": 43.529676387881835, "lon": -80.2372767674696}, {"address": "57 Caledonia Street", "lat": 43.52956381330442, "lon": -80.23712003547165}, {"address": "59 College Avenue West", "lat": 43.52943575578319, "lon": -80.23677660457865}, {"address": "61 College Avenue West", "lat": 43.529236331581366, "lon": -80.23680523256809}, {"address": "65 College Avenue West", "lat": 43.52936079634464, "lon": -80.2373488202737}, {"address": "67 College Avenue West", "lat": 43.52907793702509, "lon": -80.23731857623663}, {"address": "71 College Avenue West", "lat": 43.52882803768101, "lon": -80.23744155381475}, {"address": "50 University Avenue West", "lat": 43.530645193832264, "lon": -80.23856731040098}, {"address": "54 University Avenue West", "lat": 43.530465855326135, "lon": -80.23880776143525}, {"address": "56 University Avenue West", "lat": 43.530304344624916, "lon": -80.2390226404514}, {"address": "64 University Avenue West", "lat": 43.53014533586033, "lon": -80.23927555654797}, {"address": "66 University Avenue West", "lat": 43.52999460653413, "lon": -80.23908224325862}, {"address": "72 University Avenue West", "lat": 43.52984104144483, "lon": -80.23886742333073}, {"address": "76 University Avenue West", "lat": 43.52971579322354, "lon": -80.23856835747307}, {"address": "80 University Avenue West", "lat": 43.52959734773963, "lon": -80.23832347850107}, {"address": "84 University Avenue West", "lat": 43.52953598244296, "lon": -80.23805135272123}, {"address": "86 University Avenue West", "lat": 43.52930580718242, "lon": -80.23794075821313}, {"address": "90 University Avenue West", "lat": 43.52917110860733, "lon": -80.23776245461414}, {"address": "94 University Avenue West", "lat": 43.52897326183673, "lon": -80.23764390077257}, {"address": "12 University Avenue West", "lat": 43.53292200114628, "lon": -80.2356072077754}, {"address": "51 Caledonia Street", "lat": 43.52994867648201, "lon": -80.23761863894468}, {"address": "49 College Avenue West", "lat": 43.529836348438536, "lon": -80.23622252924535}, {"address": "41 College Avenue West", "lat": 43.530181188185445, "lon": -80.23576992358572}, {"address": "2 Borden Street", "lat": 43.53340329873678, "lon": -80.2373909490531}, {"address": "35B Caledonia Street", "lat": 43.531105039017575, "lon": -80.23921034235421}, {"address": "35A Caledonia Street", "lat": 43.53119892237614, "lon": -80.23934635378953}, {"address": "50 Dean Avenue", "lat": 43.53194990446503, "lon": -80.23956609239043}, {"address": "30 Caledonia Street", "lat": 43.531807405285896, "lon": -80.23940211396621}, {"address": "26 Dean Avenue", "lat": 43.533087713239716, "lon": -80.23786009239501}, {"address": "52 Dean Avenue", "lat": 43.53189565134867, "lon": -80.23964149365311}, {"address": "60 Dean Avenue", "lat": 43.53139076036342, "lon": -80.24024128541686}, {"address": "58 Dean Avenue", "lat": 43.53147705445539, "lon": -80.24012280006588}, {"address": "365 Gordon Street", "lat": 43.5323229240232, "lon": -80.23316375364878}, {"address": "369 Gordon Street", "lat": 43.53224456769447, "lon": -80.23305610888072}, {"address": "47 University Avenue West", "lat": 43.53140772390399, "lon": -80.23844907456102}, {"address": "51 College Avenue West", "lat": 43.52974811227188, "lon": -80.23630363159334}, {"address": "53 College Avenue West", "lat": 43.52970711004466, "lon": -80.23636055756197}, {"address": "3 University Avenue West", "lat": 43.53357614070495, "lon": -80.23528716760676}, {"address": "1 University Avenue West", "lat": 43.53361637544421, "lon": -80.23523552664786}, {"address": "1 University Avenue West B", "lat": 43.53363139330311, "lon": -80.23525931464222}, {"address": "144 Mary Street", "lat": 43.534452765312764, "lon": -80.23838381160776}, {"address": "140 Mary Street", "lat": 43.534329587722986, "lon": -80.23852560640404}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 313;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

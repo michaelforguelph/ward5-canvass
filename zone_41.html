@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 41 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 41</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 282</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "41";
+const ZONE_NAME = "Zone 41";
+const ZONE_POLYGON = [[43.527632, -80.215947], [43.526448, -80.214268], [43.533386, -80.204734], [43.534286, -80.207339], [43.530182, -80.212525], [43.529042, -80.213692], [43.528961, -80.214933], [43.528721, -80.215462], [43.528471, -80.215118], [43.527732, -80.216027], [43.527632, -80.215947]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.53047782395704, -80.21050434513745];     // [lat, lon]
+const ADDRESSES = [{"address": "12 Winterberry Lane", "lat": 43.532727739343734, "lon": -80.20762407209257}, {"address": "1 Ashcroft Court", "lat": 43.5273629240846, "lon": -80.21453501411405}, {"address": "9 Ashcroft Court", "lat": 43.52679032047637, "lon": -80.21437245215505}, {"address": "6 Ashcroft Court", "lat": 43.52705917163469, "lon": -80.21383508145136}, {"address": "1 White Pine Way", "lat": 43.5282622892735, "lon": -80.21509407839093}, {"address": "5 Ashcroft Court", "lat": 43.527064271636426, "lon": -80.2146675639956}, {"address": "40 White Pine Way", "lat": 43.527848387750495, "lon": -80.21342302440051}, {"address": "6 White Pine Way", "lat": 43.52793574331048, "lon": -80.21483808933539}, {"address": "47 White Pine Way", "lat": 43.52784115201107, "lon": -80.21264050479348}, {"address": "25 White Pine Way", "lat": 43.5273135671368, "lon": -80.2149453008148}, {"address": "20 Cherry Blossom Circle", "lat": 43.52865116048231, "lon": -80.21373436943247}, {"address": "3 White Pine Way", "lat": 43.52817711084471, "lon": -80.21520144836035}, {"address": "5 White Pine Way", "lat": 43.52810613478493, "lon": -80.2153096239154}, {"address": "7 White Pine Way", "lat": 43.52802759032102, "lon": -80.21540660873691}, {"address": "9 White Pine Way", "lat": 43.52794585512847, "lon": -80.21549854106817}, {"address": "15 White Pine Way", "lat": 43.5277732006527, "lon": -80.21568968791249}, {"address": "17 White Pine Way", "lat": 43.527637350929574, "lon": -80.21566258342673}, {"address": "19 White Pine Way", "lat": 43.52748620159091, "lon": -80.2155154479344}, {"address": "21 White Pine Way", "lat": 43.52739758507471, "lon": -80.21538374350638}, {"address": "23 White Pine Way", "lat": 43.52730406701315, "lon": -80.21518088258227}, {"address": "3 Ashcroft Court", "lat": 43.527221968850384, "lon": -80.21463192493742}, {"address": "7 Ashcroft Court", "lat": 43.52691245758531, "lon": -80.21458638306345}, {"address": "10 Ashcroft Court", "lat": 43.526773341861926, "lon": -80.21415583896315}, {"address": "8 Ashcroft Court", "lat": 43.526898333686916, "lon": -80.21393864323971}, {"address": "4 Ashcroft Court", "lat": 43.52721174205529, "lon": -80.2138346034159}, {"address": "2 Ashcroft Court", "lat": 43.527355663843345, "lon": -80.21397816862317}, {"address": "35 White Pine Way", "lat": 43.52729973734079, "lon": -80.2135627754055}, {"address": "37 White Pine Way", "lat": 43.527362834865116, "lon": -80.21336612646738}, {"address": "39 White Pine Way", "lat": 43.527453224425145, "lon": -80.21318487324507}, {"address": "41 White Pine Way", "lat": 43.52754857879583, "lon": -80.21303674101766}, {"address": "43 White Pine Way", "lat": 43.52764732278061, "lon": -80.2129093642102}, {"address": "45 White Pine Way", "lat": 43.52774292830732, "lon": -80.21277343703665}, {"address": "46 White Pine Way", "lat": 43.52807839939284, "lon": -80.21307456137043}, {"address": "44 White Pine Way", "lat": 43.52799519405157, "lon": -80.21319425484906}, {"address": "42 White Pine Way", "lat": 43.52791991304318, "lon": -80.2133165440129}, {"address": "38 White Pine Way", "lat": 43.527753427342475, "lon": -80.21355676810805}, {"address": "36 White Pine Way", "lat": 43.527721169752986, "lon": -80.21373494499286}, {"address": "34 White Pine Way", "lat": 43.527704393978176, "lon": -80.2138906331576}, {"address": "32 White Pine Way", "lat": 43.52771895002705, "lon": -80.21404266470934}, {"address": "30 White Pine Way", "lat": 43.52769823267706, "lon": -80.21419193180296}, {"address": "28 White Pine Way", "lat": 43.52771911473792, "lon": -80.21441276580587}, {"address": "26 White Pine Way", "lat": 43.52770032121839, "lon": -80.21457214173896}, {"address": "12 White Pine Way", "lat": 43.52770173274973, "lon": -80.2151394390835}, {"address": "10 White Pine Way", "lat": 43.52777772732875, "lon": -80.21503673186822}, {"address": "8 White Pine Way", "lat": 43.52785354745661, "lon": -80.21492882664685}, {"address": "4 White Pine Way", "lat": 43.528006842672525, "lon": -80.21472040042342}, {"address": "2 White Pine Way", "lat": 43.52807622710496, "lon": -80.21460357004513}, {"address": "11 Cherry Blossom Circle", "lat": 43.52803578359871, "lon": -80.2142558775309}, {"address": "15 Cherry Blossom Circle", "lat": 43.52802706996165, "lon": -80.2140488596404}, {"address": "17 Cherry Blossom Circle", "lat": 43.52805201578363, "lon": -80.21385746630146}, {"address": "19 Cherry Blossom Circle", "lat": 43.52812844000551, "lon": -80.21367442798609}, {"address": "21 Cherry Blossom Circle", "lat": 43.52821653930676, "lon": -80.21351083603413}, {"address": "23 Cherry Blossom Circle", "lat": 43.528306914404496, "lon": -80.21336971951943}, {"address": "18 Cherry Blossom Circle", "lat": 43.5285606929837, "lon": -80.21388018381208}, {"address": "16 Cherry Blossom Circle", "lat": 43.52849097705246, "lon": -80.21407809275887}, {"address": "14 Cherry Blossom Circle", "lat": 43.528453425432815, "lon": -80.21427728406621}, {"address": "10 Cherry Blossom Circle", "lat": 43.528471936418555, "lon": -80.2146083305796}, {"address": "8 Cherry Blossom Circle", "lat": 43.52853850708069, "lon": -80.21477282201162}, {"address": "6 Cherry Blossom Circle", "lat": 43.52862708487873, "lon": -80.21494219131168}, {"address": "4 Cherry Blossom Circle", "lat": 43.528740433605556, "lon": -80.21511230291998}, {"address": "1 Beechlawn Boulevard", "lat": 43.53011588703532, "lon": -80.21223990169642}, {"address": "3 Beechlawn Boulevard", "lat": 43.530198100989416, "lon": -80.21208429303398}, {"address": "5 Beechlawn Boulevard", "lat": 43.53030292088719, "lon": -80.21194647774765}, {"address": "7 Beechlawn Boulevard", "lat": 43.530392347728565, "lon": -80.21184468362223}, {"address": "17 Beechlawn Boulevard", "lat": 43.53060078321024, "lon": -80.21150250908607}, {"address": "19 Beechlawn Boulevard", "lat": 43.53068812780711, "lon": -80.21137446616241}, {"address": "25 Cherry Blossom Circle", "lat": 43.52841759162208, "lon": -80.21326230364838}, {"address": "27 Cherry Blossom Circle", "lat": 43.528493172129444, "lon": -80.2131193033029}, {"address": "29 Cherry Blossom Circle", "lat": 43.52859434170379, "lon": -80.21302276557529}, {"address": "33 Cherry Blossom Circle", "lat": 43.52870856505593, "lon": -80.21283160362684}, {"address": "37 Cherry Blossom Circle", "lat": 43.52890222904824, "lon": -80.21258114341242}, {"address": "39 Cherry Blossom Circle", "lat": 43.52899438490793, "lon": -80.21245152833212}, {"address": "41 Cherry Blossom Circle", "lat": 43.529113086302814, "lon": -80.21234104865275}, {"address": "43 Cherry Blossom Circle", "lat": 43.52921980218553, "lon": -80.21222614070031}, {"address": "45 Cherry Blossom Circle", "lat": 43.52934531077008, "lon": -80.21215502428232}, {"address": "47 Cherry Blossom Circle", "lat": 43.52948727048953, "lon": -80.21210775863788}, {"address": "49 Cherry Blossom Circle", "lat": 43.52960629016545, "lon": -80.2120864939633}, {"address": "51 Cherry Blossom Circle", "lat": 43.52978012632597, "lon": -80.21209994903687}, {"address": "53 Cherry Blossom Circle", "lat": 43.52990378136176, "lon": -80.2121451904738}, {"address": "22 Cherry Blossom Circle", "lat": 43.5287620541281, "lon": -80.21360404293739}, {"address": "24 Cherry Blossom Circle", "lat": 43.528848812084604, "lon": -80.21346563791893}, {"address": "82 White Pine Way", "lat": 43.53005880178458, "lon": -80.2116907861688}, {"address": "80 White Pine Way", "lat": 43.52991717546118, "lon": -80.21166048792026}, {"address": "78 White Pine Way", "lat": 43.5297804669567, "lon": -80.21165234963024}, {"address": "76 White Pine Way", "lat": 43.529609354753454, "lon": -80.21165198699174}, {"address": "74 White Pine Way", "lat": 43.52949809561082, "lon": -80.21164343806358}, {"address": "72 White Pine Way", "lat": 43.52939010357664, "lon": -80.21167007193549}, {"address": "70 White Pine Way", "lat": 43.52925329754449, "lon": -80.21169976521001}, {"address": "68 White Pine Way", "lat": 43.52908334403322, "lon": -80.2118069982756}, {"address": "66 White Pine Way", "lat": 43.52897180224618, "lon": -80.2119286893331}, {"address": "64 White Pine Way", "lat": 43.528868955734154, "lon": -80.21203314057834}, {"address": "62 White Pine Way", "lat": 43.528791439582335, "lon": -80.21213991624128}, {"address": "60 White Pine Way", "lat": 43.52871381801492, "lon": -80.21223990145991}, {"address": "58 White Pine Way", "lat": 43.52863498005308, "lon": -80.21234618392288}, {"address": "56 White Pine Way", "lat": 43.52855996768914, "lon": -80.21244786348491}, {"address": "54 White Pine Way", "lat": 43.5284823802783, "lon": -80.21254644165391}, {"address": "52 White Pine Way", "lat": 43.52836612270384, "lon": -80.2127301874405}, {"address": "50 White Pine Way", "lat": 43.528267282891754, "lon": -80.21285276946412}, {"address": "48 White Pine Way", "lat": 43.52817483789989, "lon": -80.21296347194442}, {"address": "49 White Pine Way", "lat": 43.52794955430772, "lon": -80.21254122619202}, {"address": "51 White Pine Way", "lat": 43.52803249950587, "lon": -80.21241445424987}, {"address": "53 White Pine Way", "lat": 43.528107998635974, "lon": -80.21231259471824}, {"address": "55 White Pine Way", "lat": 43.5281803764492, "lon": -80.2122098981582}, {"address": "57 White Pine Way", "lat": 43.52825989821915, "lon": -80.21210159893444}, {"address": "59 White Pine Way", "lat": 43.5283383918776, "lon": -80.211999218246}, {"address": "61 White Pine Way", "lat": 43.528413521664206, "lon": -80.21188915896794}, {"address": "65 White Pine Way", "lat": 43.52851173201029, "lon": -80.21178565471571}, {"address": "67 White Pine Way", "lat": 43.52860891522055, "lon": -80.21164811675317}, {"address": "69 White Pine Way", "lat": 43.528706004642, "lon": -80.2115108431616}, {"address": "71 White Pine Way", "lat": 43.52881866729176, "lon": -80.21138149058734}, {"address": "73 White Pine Way", "lat": 43.528936805159105, "lon": -80.21126413209875}, {"address": "75 White Pine Way", "lat": 43.52907767481932, "lon": -80.21120417933822}, {"address": "77 White Pine Way", "lat": 43.529204172826795, "lon": -80.21112765365875}, {"address": "83 White Pine Way", "lat": 43.53021464490647, "lon": -80.2111419853305}, {"address": "85 White Pine Way", "lat": 43.53033332151761, "lon": -80.2111960482105}, {"address": "87 White Pine Way", "lat": 43.53047151122407, "lon": -80.21127361942162}, {"address": "1 Wild Rose Court", "lat": 43.529520093846905, "lon": -80.21119645694102}, {"address": "3 Wild Rose Court", "lat": 43.52947782240023, "lon": -80.21103421052105}, {"address": "5 Wild Rose Court", "lat": 43.529427240876956, "lon": -80.210843676074}, {"address": "7 Wild Rose Court", "lat": 43.52943157808138, "lon": -80.21063770393359}, {"address": "9 Wild Rose Court", "lat": 43.52954151635659, "lon": -80.21040045017976}, {"address": "11 Wild Rose Court", "lat": 43.529695995990124, "lon": -80.21029404166994}, {"address": "10 Wild Rose Court", "lat": 43.529933130516234, "lon": -80.21045513343701}, {"address": "8 Wild Rose Court", "lat": 43.530038911797284, "lon": -80.21067823073562}, {"address": "6 Wild Rose Court", "lat": 43.5300236604549, "lon": -80.21086188566218}, {"address": "4 Wild Rose Court", "lat": 43.529966663584005, "lon": -80.21104555252002}, {"address": "2 Wild Rose Court", "lat": 43.529936168066826, "lon": -80.21120566339178}, {"address": "21 Beechlawn Boulevard", "lat": 43.530784986243155, "lon": -80.21124004792209}, {"address": "23 Beechlawn Boulevard", "lat": 43.53088011603395, "lon": -80.21111833440004}, {"address": "5 Parkside Drive", "lat": 43.530704354242744, "lon": -80.21093793086827}, {"address": "7 Parkside Drive", "lat": 43.53062667347244, "lon": -80.21083087451689}, {"address": "9 Parkside Drive", "lat": 43.530523881245344, "lon": -80.21073001815266}, {"address": "11 Parkside Drive", "lat": 43.53043000520823, "lon": -80.21059217023861}, {"address": "15 Parkside Drive", "lat": 43.530345952247565, "lon": -80.210449708453}, {"address": "17 Parkside Drive", "lat": 43.53024777589015, "lon": -80.21032026604502}, {"address": "19 Parkside Drive", "lat": 43.53013860043805, "lon": -80.21018269824724}, {"address": "21 Parkside Drive", "lat": 43.53007198183858, "lon": -80.20999906074832}, {"address": "25 Parkside Drive", "lat": 43.530169790779816, "lon": -80.20952315306621}, {"address": "27 Parkside Drive", "lat": 43.53028444404876, "lon": -80.20940633997301}, {"address": "29 Parkside Drive", "lat": 43.53037099381812, "lon": -80.20925445607612}, {"address": "31 Parkside Drive", "lat": 43.53046973685601, "lon": -80.20912378509408}, {"address": "33 Parkside Drive", "lat": 43.53057944573019, "lon": -80.20897902425689}, {"address": "35 Parkside Drive", "lat": 43.530672521964114, "lon": -80.20886290720466}, {"address": "37 Parkside Drive", "lat": 43.530782993866566, "lon": -80.20872306218682}, {"address": "39 Parkside Drive", "lat": 43.530886726732355, "lon": -80.2086201435297}, {"address": "41 Parkside Drive", "lat": 43.531018988061234, "lon": -80.2084967507729}, {"address": "43 Parkside Drive", "lat": 43.5311258403424, "lon": -80.20835308048859}, {"address": "45 Parkside Drive", "lat": 43.53122816580795, "lon": -80.20820209790872}, {"address": "47 Parkside Drive", "lat": 43.53129735043078, "lon": -80.20809066833871}, {"address": "49 Parkside Drive", "lat": 43.531378158728224, "lon": -80.20791519879455}, {"address": "51 Parkside Drive", "lat": 43.53146600239532, "lon": -80.20778816227221}, {"address": "53 Parkside Drive", "lat": 43.5315626594748, "lon": -80.20764816758474}, {"address": "55 Parkside Drive", "lat": 43.53165563570472, "lon": -80.20752184770535}, {"address": "57 Parkside Drive", "lat": 43.53176027839809, "lon": -80.20739018172618}, {"address": "2 Parkside Drive", "lat": 43.53116287351074, "lon": -80.21081775057678}, {"address": "4 Parkside Drive", "lat": 43.53108252185038, "lon": -80.21071015293757}, {"address": "6 Parkside Drive", "lat": 43.53100293074874, "lon": -80.2106014838253}, {"address": "8 Parkside Drive", "lat": 43.530921681662825, "lon": -80.21051247440094}, {"address": "10 Parkside Drive", "lat": 43.530867483398694, "lon": -80.21037620346091}, {"address": "12 Parkside Drive", "lat": 43.53077211787892, "lon": -80.21028844551503}, {"address": "14 Parkside Drive", "lat": 43.53071287183019, "lon": -80.21016589505965}, {"address": "18 Parkside Drive", "lat": 43.5305405784768, "lon": -80.20995092026571}, {"address": "20 Parkside Drive", "lat": 43.53047007002672, "lon": -80.20985240382362}, {"address": "23 Magnolia Lane", "lat": 43.53067694551478, "lon": -80.20954397469892}, {"address": "21 Magnolia Lane", "lat": 43.53073450439341, "lon": -80.20961904868051}, {"address": "19 Magnolia Lane", "lat": 43.53079193043103, "lon": -80.20970461169205}, {"address": "17 Magnolia Lane", "lat": 43.53088266180607, "lon": -80.20983703746526}, {"address": "15 Magnolia Lane", "lat": 43.53094042552296, "lon": -80.20991624279222}, {"address": "11 Magnolia Lane", "lat": 43.53100171349505, "lon": -80.21000053943025}, {"address": "9 Magnolia Lane", "lat": 43.531095452734725, "lon": -80.21013594900327}, {"address": "7 Magnolia Lane", "lat": 43.53115468906445, "lon": -80.21021798333588}, {"address": "5 Magnolia Lane", "lat": 43.53123471924157, "lon": -80.210321598406}, {"address": "3 Magnolia Lane", "lat": 43.531301972914875, "lon": -80.21041981875605}, {"address": "1 Magnolia Lane", "lat": 43.53138508584884, "lon": -80.21054037125674}, {"address": "2 Magnolia Lane", "lat": 43.53165946000369, "lon": -80.210180254797}, {"address": "4 Magnolia Lane", "lat": 43.53158587687586, "lon": -80.2100529444103}, {"address": "6 Magnolia Lane", "lat": 43.53151448339063, "lon": -80.2099743615676}, {"address": "8 Magnolia Lane", "lat": 43.53145820395207, "lon": -80.20985012521201}, {"address": "10 Magnolia Lane", "lat": 43.53139117084034, "lon": -80.20975587747334}, {"address": "12 Magnolia Lane", "lat": 43.531308644978395, "lon": -80.20964143572458}, {"address": "14 Magnolia Lane", "lat": 43.531242262843726, "lon": -80.20954799055883}, {"address": "18 Magnolia Lane", "lat": 43.531072078088826, "lon": -80.20933224310058}, {"address": "20 Magnolia Lane", "lat": 43.531019812479386, "lon": -80.20925910468712}, {"address": "22 Magnolia Lane", "lat": 43.530965018323236, "lon": -80.20918217410458}, {"address": "16 Magnolia Lane", "lat": 43.53113320482917, "lon": -80.20941712061929}, {"address": "15 Driftwood Drive", "lat": 43.53131846998092, "lon": -80.20904505299526}, {"address": "11 Driftwood Drive", "lat": 43.53139608380741, "lon": -80.20915364621247}, {"address": "9 Driftwood Drive", "lat": 43.53147027752641, "lon": -80.20925713233834}, {"address": "7 Driftwood Drive", "lat": 43.53154793990387, "lon": -80.20936548413437}, {"address": "5 Driftwood Drive", "lat": 43.531637939354205, "lon": -80.20948380717122}, {"address": "3 Driftwood Drive", "lat": 43.53172070883482, "lon": -80.20962500029994}, {"address": "1 Driftwood Drive", "lat": 43.5318070826302, "lon": -80.20976217037708}, {"address": "2 Driftwood Drive", "lat": 43.532087215206026, "lon": -80.20939814845983}, {"address": "4 Driftwood Drive", "lat": 43.53199881918102, "lon": -80.2092712123622}, {"address": "6 Driftwood Drive", "lat": 43.53189149150877, "lon": -80.20915297429661}, {"address": "8 Driftwood Drive", "lat": 43.53183162481242, "lon": -80.2090168952992}, {"address": "10 Driftwood Drive", "lat": 43.53175223780811, "lon": -80.20890464036327}, {"address": "12 Driftwood Drive", "lat": 43.53166894489426, "lon": -80.2087895556836}, {"address": "14 Driftwood Drive", "lat": 43.5315995884978, "lon": -80.20869410406362}, {"address": "16 Driftwood Drive", "lat": 43.53149631150784, "lon": -80.20859489958332}, {"address": "17 Driftwood Drive", "lat": 43.53121354409228, "lon": -80.20893301892366}, {"address": "23 Amberwood Lane", "lat": 43.53166756815271, "lon": -80.2082419777129}, {"address": "21 Amberwood Lane", "lat": 43.531752376465114, "lon": -80.20833539516387}, {"address": "19 Amberwood Lane", "lat": 43.53182950262374, "lon": -80.20844394387757}, {"address": "17 Amberwood Lane", "lat": 43.531890082431175, "lon": -80.2085327048359}, {"address": "15 Amberwood Lane", "lat": 43.531993076272514, "lon": -80.20863717579269}, {"address": "11 Amberwood Lane", "lat": 43.53205821373641, "lon": -80.20872943196252}, {"address": "9 Amberwood Lane", "lat": 43.532149265153706, "lon": -80.20885667920514}, {"address": "7 Amberwood Lane", "lat": 43.53220852747757, "lon": -80.20893908587458}, {"address": "5 Amberwood Lane", "lat": 43.53226868429551, "lon": -80.20902532994477}, {"address": "3 Amberwood Lane", "lat": 43.53236976192268, "lon": -80.20917267563067}, {"address": "1 Amberwood Lane", "lat": 43.53245177663527, "lon": -80.20931052846068}, {"address": "2 Amberwood Lane", "lat": 43.53273455229628, "lon": -80.20896134574413}, {"address": "4 Amberwood Lane", "lat": 43.53263082502267, "lon": -80.2088627451003}, {"address": "6 Amberwood Lane", "lat": 43.53253213555036, "lon": -80.20868895142475}, {"address": "8 Amberwood Lane", "lat": 43.532474442828345, "lon": -80.20861127767071}, {"address": "12 Amberwood Lane", "lat": 43.532339968280404, "lon": -80.20840065412098}, {"address": "14 Amberwood Lane", "lat": 43.532274443881654, "lon": -80.20830795121864}, {"address": "16 Amberwood Lane", "lat": 43.532168177665646, "lon": -80.2082150587933}, {"address": "18 Amberwood Lane", "lat": 43.532096541088016, "lon": -80.2080833605076}, {"address": "20 Amberwood Lane", "lat": 43.5320387747006, "lon": -80.20796820708564}, {"address": "22 Amberwood Lane", "lat": 43.53193856074381, "lon": -80.20787608167188}, {"address": "23 Parkside Drive", "lat": 43.53005181966722, "lon": -80.2097027975344}, {"address": "16 Parkside Drive", "lat": 43.53062449351745, "lon": -80.2100664232624}, {"address": "79 Basswood Drive", "lat": 43.533160099661934, "lon": -80.2083020259174}, {"address": "81 Basswood Drive", "lat": 43.53323108980958, "lon": -80.20818606184262}, {"address": "83 Basswood Drive", "lat": 43.53331663992845, "lon": -80.20809106902287}, {"address": "86 Basswood Drive", "lat": 43.53370564914646, "lon": -80.207893977858}, {"address": "88 Basswood Drive", "lat": 43.53367016839072, "lon": -80.20771378337389}, {"address": "90 Basswood Drive", "lat": 43.533602358527126, "lon": -80.2075682550822}, {"address": "92 Basswood Drive", "lat": 43.533551112680875, "lon": -80.20735221186155}, {"address": "94 Basswood Drive", "lat": 43.53344749554548, "lon": -80.20716970660752}, {"address": "96 Basswood Drive", "lat": 43.53335012254848, "lon": -80.20703549626356}, {"address": "98 Basswood Drive", "lat": 43.53325943084022, "lon": -80.20688705528242}, {"address": "100 Basswood Drive", "lat": 43.533190765246346, "lon": -80.2067451353949}, {"address": "89 Basswood Drive", "lat": 43.53321541148762, "lon": -80.20768265803191}, {"address": "91 Basswood Drive", "lat": 43.53312838100839, "lon": -80.20753606201617}, {"address": "93 Basswood Drive", "lat": 43.533056890722165, "lon": -80.20738050800163}, {"address": "95 Basswood Drive", "lat": 43.53294177186104, "lon": -80.20726140178611}, {"address": "97 Basswood Drive", "lat": 43.53287041892842, "lon": -80.20712674630545}, {"address": "99 Basswood Drive", "lat": 43.53275346187374, "lon": -80.20698970113696}, {"address": "101 Basswood Drive", "lat": 43.532682259264256, "lon": -80.20686339208108}, {"address": "59 Parkside Drive", "lat": 43.53185077288094, "lon": -80.20726231808979}, {"address": "61 Parkside Drive", "lat": 43.53197166480843, "lon": -80.20711099577566}, {"address": "65 Parkside Drive", "lat": 43.53216773867453, "lon": -80.20685124946189}, {"address": "67 Parkside Drive", "lat": 43.53226397198837, "lon": -80.20671964563553}, {"address": "63 Parkside Drive", "lat": 43.53206959670109, "lon": -80.20698174052865}, {"address": "69 Parkside Drive", "lat": 43.53234824629312, "lon": -80.20659979572294}, {"address": "71 Parkside Drive", "lat": 43.53245895603047, "lon": -80.20646050265032}, {"address": "73 Parkside Drive", "lat": 43.532562036849065, "lon": -80.20635864021469}, {"address": "75 Parkside Drive", "lat": 43.53265493733492, "lon": -80.20628841174532}, {"address": "77 Parkside Drive", "lat": 43.53273174908289, "lon": -80.20618874718949}, {"address": "79 Parkside Drive", "lat": 43.53282843675371, "lon": -80.2060185649997}, {"address": "81 Parkside Drive", "lat": 43.532917817994274, "lon": -80.20592964071606}, {"address": "83 Parkside Drive", "lat": 43.53300053978297, "lon": -80.20578253424728}, {"address": "85 Parkside Drive", "lat": 43.53318658346064, "lon": -80.20560804652882}, {"address": "76 Parkside Drive", "lat": 43.532982122363435, "lon": -80.20655592144034}, {"address": "78 Parkside Drive", "lat": 43.53308051245375, "lon": -80.20643322884052}, {"address": "80 Parkside Drive", "lat": 43.533178337002596, "lon": -80.20630133538631}, {"address": "82 Parkside Drive", "lat": 43.53339290715146, "lon": -80.20635464116228}, {"address": "84 Parkside Drive", "lat": 43.533477552002076, "lon": -80.20619562151441}, {"address": "86 Parkside Drive", "lat": 43.53349007434554, "lon": -80.20595006377201}, {"address": "88 Parkside Drive", "lat": 43.53340114082279, "lon": -80.20568072003513}, {"address": "3 Winterberry Lane", "lat": 43.53287489272422, "lon": -80.20852120650783}, {"address": "1 Winterberry Lane", "lat": 43.53295328990505, "lon": -80.20862686709447}, {"address": "5 Winterberry Lane", "lat": 43.5327969043092, "lon": -80.20841126490703}, {"address": "7 Winterberry Lane", "lat": 43.532724096635164, "lon": -80.20830819012981}, {"address": "9 Winterberry Lane", "lat": 43.532648508872164, "lon": -80.20820245770436}, {"address": "11 Winterberry Lane", "lat": 43.5325635234687, "lon": -80.20807412733322}, {"address": "15 Winterberry Lane", "lat": 43.532465209326794, "lon": -80.20793596698665}, {"address": "17 Winterberry Lane", "lat": 43.532373064338564, "lon": -80.20780607147202}, {"address": "19 Winterberry Lane", "lat": 43.53225151990295, "lon": -80.20769844198661}, {"address": "21 Winterberry Lane", "lat": 43.53216223933486, "lon": -80.20758056396888}, {"address": "6 Winterberry Lane", "lat": 43.533039150400235, "lon": -80.20802766726645}, {"address": "8 Winterberry Lane", "lat": 43.53291380960017, "lon": -80.20787825953717}, {"address": "10 Winterberry Lane", "lat": 43.53277413354287, "lon": -80.20768124364395}, {"address": "14 Winterberry Lane", "lat": 43.53264361751289, "lon": -80.2074838945951}, {"address": "16 Winterberry Lane", "lat": 43.53256900659611, "lon": -80.20738397099983}, {"address": "18 Winterberry Lane", "lat": 43.5325193730937, "lon": -80.20726947937321}, {"address": "20 Winterberry Lane", "lat": 43.53242400393705, "lon": -80.20718257548705}, {"address": "10 Amberwood Lane", "lat": 43.53241782382549, "lon": -80.20854134607029}, {"address": "35 Cherry Blossom Circle", "lat": 43.5288038646637, "lon": -80.21270160937169}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 282;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

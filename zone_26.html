@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 26 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 26</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 224</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "26";
+const ZONE_NAME = "Zone 26";
+const ZONE_POLYGON = [[43.515633, -80.223243], [43.514012, -80.220604], [43.51682, -80.216828], [43.517743, -80.218697], [43.518441, -80.220103], [43.519209, -80.2207], [43.51988, -80.221837], [43.51879, -80.223359], [43.516737, -80.223783], [43.516345, -80.222723], [43.515703, -80.223417], [43.515633, -80.223243]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.5168933775353, -80.22085830929007];     // [lat, lon]
+const ADDRESSES = [{"address": "11 Brombal Drive", "lat": 43.515997507688695, "lon": -80.22133679528905}, {"address": "9 Brombal Drive", "lat": 43.5160964526319, "lon": -80.22118399349866}, {"address": "7 Brombal Drive", "lat": 43.516200466855956, "lon": -80.2210445553244}, {"address": "5 Brombal Drive", "lat": 43.51630418061345, "lon": -80.22089884014076}, {"address": "3 Brombal Drive", "lat": 43.51640903401152, "lon": -80.22076354619904}, {"address": "14 Brombal Drive", "lat": 43.51570454283466, "lon": -80.220848889006}, {"address": "12 Brombal Drive", "lat": 43.51580174828753, "lon": -80.2207169413316}, {"address": "10 Brombal Drive", "lat": 43.51589978924245, "lon": -80.22058315380126}, {"address": "8 Brombal Drive", "lat": 43.51599809238452, "lon": -80.22045007388819}, {"address": "6 Brombal Drive", "lat": 43.51609393844891, "lon": -80.22031347793092}, {"address": "4 Brombal Drive", "lat": 43.516192198764024, "lon": -80.22017416557203}, {"address": "4 Crowe Street", "lat": 43.51580699215711, "lon": -80.22296650212824}, {"address": "2 Crowe Street", "lat": 43.51608598538451, "lon": -80.22274988061444}, {"address": "690 Edinburgh Road South", "lat": 43.51570481105863, "lon": -80.22278830050004}, {"address": "692 Edinburgh Road South", "lat": 43.51561955880859, "lon": -80.22261728960639}, {"address": "694 Edinburgh Road South", "lat": 43.515530894350334, "lon": -80.2224487579282}, {"address": "696 Edinburgh Road South", "lat": 43.515433806048925, "lon": -80.2222837806851}, {"address": "698 Edinburgh Road South", "lat": 43.515329540136484, "lon": -80.22212077432067}, {"address": "700 Edinburgh Road South", "lat": 43.51521967617161, "lon": -80.22196969329755}, {"address": "702 Edinburgh Road South", "lat": 43.51511297318046, "lon": -80.22182268233696}, {"address": "704 Edinburgh Road South", "lat": 43.51500457821651, "lon": -80.22167634937922}, {"address": "2 Keats Crescent", "lat": 43.51824077048647, "lon": -80.22031826248855}, {"address": "12 Keats Crescent", "lat": 43.51811957605954, "lon": -80.22064245397284}, {"address": "16 Keats Crescent", "lat": 43.517982238671856, "lon": -80.22055720193495}, {"address": "18 Keats Crescent", "lat": 43.51788556338551, "lon": -80.22043681690516}, {"address": "20 Keats Crescent", "lat": 43.517791255640674, "lon": -80.22031214173873}, {"address": "24 Keats Crescent", "lat": 43.51769850208455, "lon": -80.22016109243744}, {"address": "28 Keats Crescent", "lat": 43.51762818866162, "lon": -80.21999090427556}, {"address": "30 Keats Crescent", "lat": 43.517559701681705, "lon": -80.21982358082806}, {"address": "32 Keats Crescent", "lat": 43.517488246392794, "lon": -80.21965371130021}, {"address": "34 Keats Crescent", "lat": 43.51741720994622, "lon": -80.21948033894064}, {"address": "36 Keats Crescent", "lat": 43.51734601601389, "lon": -80.21931097413663}, {"address": "38 Keats Crescent", "lat": 43.51727426464865, "lon": -80.21914110839167}, {"address": "40 Keats Crescent", "lat": 43.51720258416816, "lon": -80.2189653118005}, {"address": "42 Keats Crescent", "lat": 43.517136001391236, "lon": -80.2187853977339}, {"address": "44 Keats Crescent", "lat": 43.51706141741287, "lon": -80.21861131595696}, {"address": "46 Keats Crescent", "lat": 43.51698624450069, "lon": -80.21842659536246}, {"address": "56 Keats Crescent", "lat": 43.517192015101756, "lon": -80.21816907238801}, {"address": "1 Keats Crescent", "lat": 43.51858233340908, "lon": -80.220529966855}, {"address": "3 Keats Crescent", "lat": 43.51858601625513, "lon": -80.22083222861203}, {"address": "5 Keats Crescent", "lat": 43.51850578374001, "lon": -80.22099761764592}, {"address": "7 Keats Crescent", "lat": 43.51840533489405, "lon": -80.22120031273703}, {"address": "9 Keats Crescent", "lat": 43.51817945076165, "lon": -80.22142433790253}, {"address": "11 Keats Crescent", "lat": 43.517989303509836, "lon": -80.22126297341167}, {"address": "15 Keats Crescent", "lat": 43.51784487247866, "lon": -80.22116944226445}, {"address": "17 Keats Crescent", "lat": 43.517723477230895, "lon": -80.22105481495181}, {"address": "19 Keats Crescent", "lat": 43.51761214333859, "lon": -80.22093730194068}, {"address": "21 Keats Crescent", "lat": 43.51750488234222, "lon": -80.2208004264571}, {"address": "23 Keats Crescent", "lat": 43.51740138430098, "lon": -80.22065843630216}, {"address": "25 Keats Crescent", "lat": 43.51731992494925, "lon": -80.22051408550693}, {"address": "27 Keats Crescent", "lat": 43.517244143853205, "lon": -80.22034786957394}, {"address": "29 Keats Crescent", "lat": 43.51717391968216, "lon": -80.2201744891067}, {"address": "31 Keats Crescent", "lat": 43.51710300189556, "lon": -80.22000770406265}, {"address": "33 Keats Crescent", "lat": 43.51703320338801, "lon": -80.2198426780199}, {"address": "35 Keats Crescent", "lat": 43.51696520896796, "lon": -80.21968264753863}, {"address": "37 Keats Crescent", "lat": 43.516867338772215, "lon": -80.21945225461437}, {"address": "39 Keats Crescent", "lat": 43.516797430614986, "lon": -80.21928763956844}, {"address": "41 Keats Crescent", "lat": 43.51672715639031, "lon": -80.21912338224769}, {"address": "43 Keats Crescent", "lat": 43.516657364587005, "lon": -80.21895952491248}, {"address": "45 Keats Crescent", "lat": 43.516581794198636, "lon": -80.21879746355896}, {"address": "47 Keats Crescent", "lat": 43.51650076890279, "lon": -80.21862513803036}, {"address": "49 Keats Crescent", "lat": 43.516479833217765, "lon": -80.21831413929333}, {"address": "51 Keats Crescent", "lat": 43.516579339570086, "lon": -80.21813618755553}, {"address": "53 Keats Crescent", "lat": 43.51670648547219, "lon": -80.21800911528008}, {"address": "55 Keats Crescent", "lat": 43.5168086544665, "lon": -80.21787547218042}, {"address": "115 Kortright Road West", "lat": 43.51670048597772, "lon": -80.21730195716523}, {"address": "117 Kortright Road West", "lat": 43.5166023916766, "lon": -80.21753539792381}, {"address": "119 Kortright Road West", "lat": 43.51650129891566, "lon": -80.2176699378669}, {"address": "121 Kortright Road West", "lat": 43.51640013425359, "lon": -80.21780478389401}, {"address": "123 Kortright Road West", "lat": 43.516300548863704, "lon": -80.21794411892833}, {"address": "125 Kortright Road West", "lat": 43.51619776837803, "lon": -80.21807999823498}, {"address": "127 Kortright Road West", "lat": 43.51609521333183, "lon": -80.2182112096674}, {"address": "129 Kortright Road West", "lat": 43.5160177291323, "lon": -80.21834631610368}, {"address": "131 Kortright Road West", "lat": 43.5159118507615, "lon": -80.21847706601594}, {"address": "133 Kortright Road West", "lat": 43.51580711843363, "lon": -80.21861347476357}, {"address": "135 Kortright Road West", "lat": 43.51570872331458, "lon": -80.21874898963385}, {"address": "137 Kortright Road West", "lat": 43.515610354374395, "lon": -80.2188830883007}, {"address": "139 Kortright Road West", "lat": 43.51551089519874, "lon": -80.21901947714171}, {"address": "141 Kortright Road West", "lat": 43.515411296867576, "lon": -80.21915713674942}, {"address": "143 Kortright Road West", "lat": 43.51530908535187, "lon": -80.21929558926516}, {"address": "145 Kortright Road West", "lat": 43.51520586587583, "lon": -80.21943770295351}, {"address": "147 Kortright Road West", "lat": 43.515103038432294, "lon": -80.2195777832537}, {"address": "149 Kortright Road West", "lat": 43.5150018226559, "lon": -80.21971642442547}, {"address": "151 Kortright Road West", "lat": 43.51490263018984, "lon": -80.21985417546914}, {"address": "153 Kortright Road West", "lat": 43.51480239069547, "lon": -80.21998986345453}, {"address": "155 Kortright Road West", "lat": 43.51470248685092, "lon": -80.22012620487722}, {"address": "171 Kortright Road West", "lat": 43.5147236581962, "lon": -80.22092996743703}, {"address": "63 Mcelderry Road", "lat": 43.51600462954399, "lon": -80.2225667355408}, {"address": "65 Mcelderry Road", "lat": 43.5159135113621, "lon": -80.22241713606876}, {"address": "67 Mcelderry Road", "lat": 43.51582645117486, "lon": -80.22225694468688}, {"address": "69 Mcelderry Road", "lat": 43.51573715137613, "lon": -80.22209820414761}, {"address": "71 Mcelderry Road", "lat": 43.51564305979989, "lon": -80.22192365903827}, {"address": "73 Mcelderry Road", "lat": 43.515543027435925, "lon": -80.22176505740077}, {"address": "75 Mcelderry Road", "lat": 43.515441339643154, "lon": -80.22162335124314}, {"address": "77 Mcelderry Road", "lat": 43.51534062157038, "lon": -80.22148325265577}, {"address": "79 Mcelderry Road", "lat": 43.51523832542075, "lon": -80.22134429082413}, {"address": "85 Mcelderry Road", "lat": 43.51495440097649, "lon": -80.22053156681686}, {"address": "87 Mcelderry Road", "lat": 43.51501287782439, "lon": -80.22029105813563}, {"address": "89 Mcelderry Road", "lat": 43.515110550002824, "lon": -80.22014116251144}, {"address": "91 Mcelderry Road", "lat": 43.51520836538058, "lon": -80.22000687493815}, {"address": "93 Mcelderry Road", "lat": 43.51530676339069, "lon": -80.21987156363913}, {"address": "95 Mcelderry Road", "lat": 43.515404499083566, "lon": -80.21973646581647}, {"address": "97 Mcelderry Road", "lat": 43.51550787903116, "lon": -80.21959617381295}, {"address": "99 Mcelderry Road", "lat": 43.5156100798352, "lon": -80.21945609943744}, {"address": "101 Mcelderry Road", "lat": 43.51571132804619, "lon": -80.21931684974783}, {"address": "103 Mcelderry Road", "lat": 43.515813119553044, "lon": -80.21917095096133}, {"address": "105 Mcelderry Road", "lat": 43.515867821452474, "lon": -80.21900989503402}, {"address": "107 Mcelderry Road", "lat": 43.51606173821993, "lon": -80.21882560974032}, {"address": "109 Mcelderry Road", "lat": 43.5162612689062, "lon": -80.21880433555012}, {"address": "111 Mcelderry Road", "lat": 43.51637612656194, "lon": -80.21908108197162}, {"address": "115 Mcelderry Road", "lat": 43.51646375360207, "lon": -80.21930754871022}, {"address": "117 Mcelderry Road", "lat": 43.51653963476388, "lon": -80.21949347593002}, {"address": "119 Mcelderry Road", "lat": 43.51660841143431, "lon": -80.21966003154148}, {"address": "121 Mcelderry Road", "lat": 43.516709043007104, "lon": -80.21989520374306}, {"address": "123 Mcelderry Road", "lat": 43.51678011910287, "lon": -80.22006365586802}, {"address": "125 Mcelderry Road", "lat": 43.516854297887974, "lon": -80.22023277987014}, {"address": "127 Mcelderry Road", "lat": 43.51692975969209, "lon": -80.22041156828487}, {"address": "129 Mcelderry Road", "lat": 43.517002593413366, "lon": -80.22058369848995}, {"address": "131 Mcelderry Road", "lat": 43.51706934643854, "lon": -80.22074567375364}, {"address": "133 Mcelderry Road", "lat": 43.517151465707144, "lon": -80.22090577760872}, {"address": "135 Mcelderry Road", "lat": 43.51725205744307, "lon": -80.22103265188457}, {"address": "137 Mcelderry Road", "lat": 43.51735965912539, "lon": -80.22116551771275}, {"address": "139 Mcelderry Road", "lat": 43.517461041648836, "lon": -80.22130013434067}, {"address": "141 Mcelderry Road", "lat": 43.51758521696538, "lon": -80.22141327826964}, {"address": "143 Mcelderry Road", "lat": 43.517709715753945, "lon": -80.22153057088248}, {"address": "145 Mcelderry Road", "lat": 43.51782127639511, "lon": -80.22166521272099}, {"address": "147 Mcelderry Road", "lat": 43.517931128922854, "lon": -80.2218238213421}, {"address": "157 Mcelderry Road", "lat": 43.51840707360179, "lon": -80.22270235888593}, {"address": "159 Mcelderry Road", "lat": 43.5183647755356, "lon": -80.22303409754116}, {"address": "6 Mcelderry Road", "lat": 43.51923506836104, "lon": -80.22215055476312}, {"address": "8 Mcelderry Road", "lat": 43.51911097093296, "lon": -80.22236865822077}, {"address": "10 Mcelderry Road", "lat": 43.51899720474069, "lon": -80.22253316198076}, {"address": "12 Mcelderry Road", "lat": 43.51887969552255, "lon": -80.22268432902887}, {"address": "14 Mcelderry Road", "lat": 43.51877579188359, "lon": -80.22281859843469}, {"address": "16 Mcelderry Road", "lat": 43.51866321594179, "lon": -80.22291415774393}, {"address": "18 Mcelderry Road", "lat": 43.51853206167447, "lon": -80.22299490436889}, {"address": "26 Mcelderry Road", "lat": 43.518002893321324, "lon": -80.22312585998772}, {"address": "28 Mcelderry Road", "lat": 43.517841939031435, "lon": -80.22317951817841}, {"address": "30 Mcelderry Road", "lat": 43.51768775378504, "lon": -80.22316010830575}, {"address": "32 Mcelderry Road", "lat": 43.51754232336645, "lon": -80.2232078914782}, {"address": "34 Mcelderry Road", "lat": 43.51739716711451, "lon": -80.22326899656196}, {"address": "36 Mcelderry Road", "lat": 43.517248876607916, "lon": -80.22332999183762}, {"address": "38 Mcelderry Road", "lat": 43.51709987779029, "lon": -80.22336823968313}, {"address": "40 Mcelderry Road", "lat": 43.516946555005916, "lon": -80.22340527704833}, {"address": "46 Mcelderry Road", "lat": 43.51675271559862, "lon": -80.22345539966126}, {"address": "52 Mcelderry Road", "lat": 43.51674207196325, "lon": -80.22313030689304}, {"address": "54 Mcelderry Road", "lat": 43.51667050277101, "lon": -80.22297011643663}, {"address": "56 Mcelderry Road", "lat": 43.51660257326377, "lon": -80.22279183764967}, {"address": "58 Mcelderry Road", "lat": 43.51651749173016, "lon": -80.22256462246328}, {"address": "60 Mcelderry Road", "lat": 43.51643957745382, "lon": -80.22235003381724}, {"address": "62 Mcelderry Road", "lat": 43.51634648446867, "lon": -80.22217583105136}, {"address": "68 Mcelderry Road", "lat": 43.51603811465729, "lon": -80.22179182238618}, {"address": "72 Mcelderry Road", "lat": 43.51588550428912, "lon": -80.22148373280335}, {"address": "78 Mcelderry Road", "lat": 43.515594034595345, "lon": -80.22097690464518}, {"address": "84 Mcelderry Road", "lat": 43.515363625315786, "lon": -80.2207030099326}, {"address": "90 Mcelderry Road", "lat": 43.515496511346754, "lon": -80.22048357989503}, {"address": "92 Mcelderry Road", "lat": 43.51560051884869, "lon": -80.22034327963316}, {"address": "94 Mcelderry Road", "lat": 43.51569893661244, "lon": -80.22021080725165}, {"address": "96 Mcelderry Road", "lat": 43.51580133173745, "lon": -80.22007204988428}, {"address": "98 Mcelderry Road", "lat": 43.51590657701185, "lon": -80.21992940372598}, {"address": "100 Mcelderry Road", "lat": 43.516004354656744, "lon": -80.21978421543598}, {"address": "110 Mcelderry Road", "lat": 43.51613708317479, "lon": -80.21965885014411}, {"address": "120 Mcelderry Road", "lat": 43.516318476685136, "lon": -80.22006550658244}, {"address": "126 Mcelderry Road", "lat": 43.516535094256014, "lon": -80.22067161511633}, {"address": "138 Mcelderry Road", "lat": 43.5171110519373, "lon": -80.22175720209222}, {"address": "140 Mcelderry Road", "lat": 43.51722909668456, "lon": -80.22189084658874}, {"address": "142 Mcelderry Road", "lat": 43.517335270206054, "lon": -80.22203072666244}, {"address": "152 Mcelderry Road", "lat": 43.517714157671335, "lon": -80.22239475743164}, {"address": "154 Mcelderry Road", "lat": 43.51780413757678, "lon": -80.22268060418358}, {"address": "156 Mcelderry Road", "lat": 43.51787280060828, "lon": -80.2228364248255}, {"address": "2 Quaiser Court", "lat": 43.51831986712473, "lon": -80.22250430434585}, {"address": "6 Quaiser Court", "lat": 43.51853373831519, "lon": -80.22246035289089}, {"address": "8 Quaiser Court", "lat": 43.518672138345984, "lon": -80.22239847027551}, {"address": "10 Quaiser Court", "lat": 43.518869449853526, "lon": -80.22226239179176}, {"address": "12 Quaiser Court", "lat": 43.51893001743909, "lon": -80.22190583557705}, {"address": "1 Quaiser Court", "lat": 43.51800597755916, "lon": -80.22209878875971}, {"address": "3 Quaiser Court", "lat": 43.518123792943975, "lon": -80.22198729936166}, {"address": "5 Quaiser Court", "lat": 43.51823325787358, "lon": -80.22186816260738}, {"address": "7 Quaiser Court", "lat": 43.51833842884717, "lon": -80.22174152804757}, {"address": "9 Quaiser Court", "lat": 43.51855550250909, "lon": -80.22148001340703}, {"address": "11 Quaiser Court", "lat": 43.518822385189814, "lon": -80.22160592053129}, {"address": "47 Rickson Avenue", "lat": 43.51951983310913, "lon": -80.22192886625548}, {"address": "49 Rickson Avenue", "lat": 43.51938559675938, "lon": -80.22173009597819}, {"address": "51 Rickson Avenue", "lat": 43.51925800706491, "lon": -80.22153808233246}, {"address": "53 Rickson Avenue", "lat": 43.51912502664846, "lon": -80.22133965397313}, {"address": "55 Rickson Avenue", "lat": 43.51899614976858, "lon": -80.22114806313353}, {"address": "57 Rickson Avenue", "lat": 43.51887163646647, "lon": -80.2209475527674}, {"address": "59 Rickson Avenue", "lat": 43.51885405495943, "lon": -80.22068940586483}, {"address": "61 Rickson Avenue", "lat": 43.518713892023484, "lon": -80.22061154000862}, {"address": "69 Rickson Avenue", "lat": 43.51812178800442, "lon": -80.22019882039713}, {"address": "71 Rickson Avenue", "lat": 43.51800780895009, "lon": -80.22005600098502}, {"address": "73 Rickson Avenue", "lat": 43.5179198698448, "lon": -80.21989799029981}, {"address": "75 Rickson Avenue", "lat": 43.51784308864715, "lon": -80.21970331355882}, {"address": "77 Rickson Avenue", "lat": 43.51777116358059, "lon": -80.21952954822436}, {"address": "79 Rickson Avenue", "lat": 43.51769812568642, "lon": -80.2193547805879}, {"address": "81 Rickson Avenue", "lat": 43.51762514994913, "lon": -80.2191783422168}, {"address": "83 Rickson Avenue", "lat": 43.51755059917807, "lon": -80.2190034971908}, {"address": "85 Rickson Avenue", "lat": 43.517475633625274, "lon": -80.21882201613994}, {"address": "87 Rickson Avenue", "lat": 43.51740207892689, "lon": -80.21864741277459}, {"address": "89 Rickson Avenue", "lat": 43.51733828228403, "lon": -80.21847050253758}, {"address": "91 Rickson Avenue", "lat": 43.51727165135168, "lon": -80.2183106568752}, {"address": "97 Rickson Avenue", "lat": 43.51699108106327, "lon": -80.21772082446452}, {"address": "99 Rickson Avenue", "lat": 43.516897405652564, "lon": -80.21757030278982}, {"address": "101 Rickson Avenue", "lat": 43.51680150245356, "lon": -80.21743399705066}, {"address": "3 Schuurman Court", "lat": 43.51758345284873, "lon": -80.2225306878097}, {"address": "5 Schuurman Court", "lat": 43.517502259821555, "lon": -80.22269091350555}, {"address": "7 Schuurman Court", "lat": 43.51739210338738, "lon": -80.22281137391028}, {"address": "9 Schuurman Court", "lat": 43.51724742264311, "lon": -80.22291525056521}, {"address": "11 Schuurman Court", "lat": 43.5170176877403, "lon": -80.22293127203507}, {"address": "6 Schuurman Court", "lat": 43.51708083795119, "lon": -80.22206491051847}, {"address": "8 Schuurman Court", "lat": 43.516921071872794, "lon": -80.22216304941279}, {"address": "10 Schuurman Court", "lat": 43.51681631904989, "lon": -80.22238936026453}, {"address": "12 Schuurman Court", "lat": 43.51688937616373, "lon": -80.22275741733236}, {"address": "1 Thomasfield Drive", "lat": 43.51696675609203, "lon": -80.22143669546377}, {"address": "3 Thomasfield Drive", "lat": 43.51685961764748, "lon": -80.22156684826852}, {"address": "5 Thomasfield Drive", "lat": 43.51675598830302, "lon": -80.22169797131421}, {"address": "7 Thomasfield Drive", "lat": 43.516654566637975, "lon": -80.22183372389424}, {"address": "9 Thomasfield Drive", "lat": 43.51654474832351, "lon": -80.22197516031277}, {"address": "2 Thomasfield Drive", "lat": 43.51667272623559, "lon": -80.2210004201539}, {"address": "4 Thomasfield Drive", "lat": 43.51655242911466, "lon": -80.22113170618573}, {"address": "6 Thomasfield Drive", "lat": 43.516446838409706, "lon": -80.22127805692644}, {"address": "8 Thomasfield Drive", "lat": 43.516345183573186, "lon": -80.22141731275215}, {"address": "10 Thomasfield Drive", "lat": 43.51624795903998, "lon": -80.22155199758915}, {"address": "12 Thomasfield Drive", "lat": 43.516152021327215, "lon": -80.22168606166424}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 224;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

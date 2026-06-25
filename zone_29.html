@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 29 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 29</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 137</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "29";
+const ZONE_NAME = "Zone 29";
+const ZONE_POLYGON = [[43.530738, -80.219055], [43.526848, -80.22454], [43.525697, -80.221307], [43.525229, -80.219451], [43.52761, -80.216007], [43.528433, -80.217341], [43.529355, -80.217412], [43.530738, -80.219055]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.52769057690748, -80.21996877993813];     // [lat, lon]
+const ADDRESSES = [{"address": "784 Gordon Street 22", "lat": 43.525965684969, "lon": -80.21991420742917}, {"address": "2 Colborn Street", "lat": 43.529127091864176, "lon": -80.22089696813391}, {"address": "4 Colborn Street", "lat": 43.52896312467831, "lon": -80.2206653004811}, {"address": "6 Colborn Street", "lat": 43.52880867238079, "lon": -80.22044983328317}, {"address": "10 Colborn Street", "lat": 43.52852644037425, "lon": -80.22005251729861}, {"address": "12 Colborn Street", "lat": 43.52835989723354, "lon": -80.21982732622482}, {"address": "14 Colborn Street", "lat": 43.52821076745849, "lon": -80.21960854990361}, {"address": "16 Colborn Street", "lat": 43.52807975429479, "lon": -80.21932602813612}, {"address": "18 Colborn Street", "lat": 43.52797169237883, "lon": -80.2190344412253}, {"address": "22 Colborn Street", "lat": 43.52786126238047, "lon": -80.21873097613825}, {"address": "24 Colborn Street", "lat": 43.52773132766007, "lon": -80.21842304911313}, {"address": "26 Colborn Street", "lat": 43.527591437140856, "lon": -80.21816411605182}, {"address": "28 Colborn Street", "lat": 43.52741877697874, "lon": -80.21792953217309}, {"address": "30 Colborn Street", "lat": 43.527235104896626, "lon": -80.2176755778792}, {"address": "9 Colborn Street", "lat": 43.52817020877143, "lon": -80.22052826663698}, {"address": "11 Colborn Street", "lat": 43.52801183713423, "lon": -80.22030705904042}, {"address": "15 Colborn Street", "lat": 43.527832179667136, "lon": -80.22006217490078}, {"address": "17 Colborn Street", "lat": 43.52770248309166, "lon": -80.219804981041}, {"address": "19 Colborn Street", "lat": 43.52761622695843, "lon": -80.2195360757846}, {"address": "21 Colborn Street", "lat": 43.527502785105376, "lon": -80.21921805284003}, {"address": "23 Colborn Street", "lat": 43.527383337773855, "lon": -80.21891734198987}, {"address": "25 Colborn Street", "lat": 43.5272383037482, "lon": -80.21862882154637}, {"address": "27 Colborn Street", "lat": 43.527075887560734, "lon": -80.21840343363512}, {"address": "2 Evergreen Drive", "lat": 43.52785577564416, "lon": -80.222469013979}, {"address": "4 Evergreen Drive", "lat": 43.52764618871675, "lon": -80.22208708007992}, {"address": "6 Evergreen Drive", "lat": 43.52743343817254, "lon": -80.22179151624036}, {"address": "8 Evergreen Drive", "lat": 43.527223627067414, "lon": -80.22149454675605}, {"address": "10 Evergreen Drive", "lat": 43.52702215064099, "lon": -80.22121374138312}, {"address": "12 Evergreen Drive", "lat": 43.52682999401071, "lon": -80.22094235152242}, {"address": "14 Evergreen Drive", "lat": 43.52663759650172, "lon": -80.22067349836958}, {"address": "1 Evergreen Drive", "lat": 43.52757320372977, "lon": -80.22292264181299}, {"address": "3 Evergreen Drive", "lat": 43.52730898973889, "lon": -80.22270068059629}, {"address": "5 Evergreen Drive", "lat": 43.52709894394918, "lon": -80.22240685480807}, {"address": "7 Evergreen Drive", "lat": 43.52688807471644, "lon": -80.22210579489885}, {"address": "9 Evergreen Drive", "lat": 43.5266760937993, "lon": -80.22180966418254}, {"address": "11 Evergreen Drive", "lat": 43.52646494978894, "lon": -80.22151185664472}, {"address": "13 Evergreen Drive", "lat": 43.52624076107403, "lon": -80.22121583885986}, {"address": "716 Gordon Street", "lat": 43.52664305095377, "lon": -80.22375608267993}, {"address": "750 Gordon Street", "lat": 43.52602129051296, "lon": -80.2215746840866}, {"address": "776 Gordon Street", "lat": 43.525729865596126, "lon": -80.22027736108537}, {"address": "2 Mayfield Avenue", "lat": 43.52690179299981, "lon": -80.2203837629812}, {"address": "4 Mayfield Avenue", "lat": 43.527123561140286, "lon": -80.2206544669411}, {"address": "6 Mayfield Avenue", "lat": 43.527352303842655, "lon": -80.22097982630687}, {"address": "8 Mayfield Avenue", "lat": 43.527574328670084, "lon": -80.22136960116866}, {"address": "10 Mayfield Avenue", "lat": 43.52791969281695, "lon": -80.22162539189138}, {"address": "12 Mayfield Avenue", "lat": 43.528266320188656, "lon": -80.22131376163854}, {"address": "14 Mayfield Avenue", "lat": 43.52848415079333, "lon": -80.22096333333975}, {"address": "5 Mayfield Avenue", "lat": 43.52745085339582, "lon": -80.22013100405718}, {"address": "7 Mayfield Avenue", "lat": 43.52771610802367, "lon": -80.22048306362184}, {"address": "11 Mayfield Avenue", "lat": 43.52792789618368, "lon": -80.22072901246783}, {"address": "19 Mayfield Avenue", "lat": 43.52889993648044, "lon": -80.2193770858255}, {"address": "14 Monticello Crescent", "lat": 43.52728836864454, "lon": -80.21963032487184}, {"address": "16 Monticello Crescent", "lat": 43.52711320871818, "lon": -80.2190669608485}, {"address": "18 Monticello Crescent", "lat": 43.52688935543668, "lon": -80.218745448687}, {"address": "22 Monticello Crescent", "lat": 43.526714426441934, "lon": -80.21845382108694}, {"address": "29 Colborn Street", "lat": 43.52691899033949, "lon": -80.21815431980099}, {"address": "38 Monticello Crescent", "lat": 43.527453740546264, "lon": -80.2173259946543}, {"address": "44 Monticello Crescent", "lat": 43.52759520386211, "lon": -80.21750172733492}, {"address": "46 Monticello Crescent", "lat": 43.527730428799444, "lon": -80.21768772613493}, {"address": "48 Monticello Crescent", "lat": 43.527863588293364, "lon": -80.21787365592539}, {"address": "50 Monticello Crescent", "lat": 43.52800583600112, "lon": -80.21808876473018}, {"address": "52 Monticello Crescent", "lat": 43.52814899506985, "lon": -80.21817845678324}, {"address": "54 Monticello Crescent", "lat": 43.52832923291348, "lon": -80.21829164852045}, {"address": "56 Monticello Crescent", "lat": 43.52857994193754, "lon": -80.21832789873388}, {"address": "58 Monticello Crescent", "lat": 43.528790948017644, "lon": -80.21832375300966}, {"address": "60 Monticello Crescent", "lat": 43.52902244752818, "lon": -80.21834474045058}, {"address": "62 Monticello Crescent", "lat": 43.52916578152836, "lon": -80.21846545609024}, {"address": "64 Monticello Crescent", "lat": 43.529282570399104, "lon": -80.21866843009072}, {"address": "3 Monticello Crescent", "lat": 43.52589378481316, "lon": -80.22085853029824}, {"address": "5 Monticello Crescent", "lat": 43.52607947482602, "lon": -80.22064102671398}, {"address": "7 Monticello Crescent", "lat": 43.52627494069098, "lon": -80.22038066460138}, {"address": "9 Monticello Crescent", "lat": 43.52639196773888, "lon": -80.22021221284584}, {"address": "15 Monticello Crescent", "lat": 43.52658889589752, "lon": -80.21977873381452}, {"address": "17 Monticello Crescent", "lat": 43.52674066020586, "lon": -80.219513709239}, {"address": "19 Monticello Crescent", "lat": 43.52654883704284, "lon": -80.2191836242642}, {"address": "21 Monticello Crescent", "lat": 43.52629976243201, "lon": -80.21890060636045}, {"address": "23 Monticello Crescent", "lat": 43.52609130863354, "lon": -80.2184579101609}, {"address": "25 Monticello Crescent", "lat": 43.526265109159255, "lon": -80.2180179858405}, {"address": "27 Monticello Crescent", "lat": 43.5265065196748, "lon": -80.21775174905054}, {"address": "29 Monticello Crescent", "lat": 43.52669781305604, "lon": -80.21748631022467}, {"address": "31 Monticello Crescent", "lat": 43.526903760051354, "lon": -80.21720638721656}, {"address": "33 Monticello Crescent", "lat": 43.527097418621956, "lon": -80.2169471512743}, {"address": "35 Monticello Crescent", "lat": 43.527247461154616, "lon": -80.21671973105589}, {"address": "39 Monticello Crescent", "lat": 43.52749845479463, "lon": -80.21639113416082}, {"address": "41 Monticello Crescent", "lat": 43.5277607488724, "lon": -80.21655714073319}, {"address": "43 Monticello Crescent", "lat": 43.52788065611779, "lon": -80.21683259888775}, {"address": "45 Monticello Crescent", "lat": 43.52802538709982, "lon": -80.21703859974448}, {"address": "47 Monticello Crescent", "lat": 43.528161204336946, "lon": -80.21723011913436}, {"address": "49 Monticello Crescent", "lat": 43.52828814945654, "lon": -80.21742940813368}, {"address": "51 Monticello Crescent", "lat": 43.52841192857569, "lon": -80.21758636250254}, {"address": "53 Monticello Crescent", "lat": 43.52863893834165, "lon": -80.21760887151464}, {"address": "55 Monticello Crescent", "lat": 43.52884580718653, "lon": -80.21759291752032}, {"address": "57 Monticello Crescent", "lat": 43.529073409467124, "lon": -80.21761030307334}, {"address": "59 Monticello Crescent", "lat": 43.5292935976474, "lon": -80.21770295386048}, {"address": "61 Monticello Crescent", "lat": 43.529468787091886, "lon": -80.2178220428089}, {"address": "63 Monticello Crescent", "lat": 43.5296039634186, "lon": -80.21804946306345}, {"address": "65 Monticello Crescent", "lat": 43.5297377652394, "lon": -80.21823777085295}, {"address": "67 Monticello Crescent", "lat": 43.52987157681127, "lon": -80.21842755079183}, {"address": "69 Monticello Crescent", "lat": 43.53000483096082, "lon": -80.21861657766802}, {"address": "71 Monticello Crescent", "lat": 43.5301380031037, "lon": -80.21880682666054}, {"address": "73 Monticello Crescent", "lat": 43.53027300636389, "lon": -80.21899628185913}, {"address": "75 Monticello Crescent", "lat": 43.53040298370294, "lon": -80.21916472213472}, {"address": "1 Old Stone Court", "lat": 43.52995496471815, "lon": -80.21950176369793}, {"address": "3 Old Stone Court", "lat": 43.52981931497246, "lon": -80.219674639956}, {"address": "5 Old Stone Court", "lat": 43.529682025316106, "lon": -80.21985570066212}, {"address": "7 Old Stone Court", "lat": 43.52957354723117, "lon": -80.22014608263673}, {"address": "9 Old Stone Court", "lat": 43.52927638007186, "lon": -80.22042515473363}, {"address": "11 Old Stone Court", "lat": 43.52903013429825, "lon": -80.22010229229592}, {"address": "63 Stone Road East", "lat": 43.52810200590438, "lon": -80.22214154076616}, {"address": "71 Stone Road East", "lat": 43.52829438183746, "lon": -80.22187649948141}, {"address": "81 Stone Road East", "lat": 43.52851092779583, "lon": -80.22159158169157}, {"address": "89 Stone Road East", "lat": 43.52872545881045, "lon": -80.22130349372046}, {"address": "2 Old Stone Court", "lat": 43.52947069441755, "lon": -80.21895346261564}, {"address": "784 Gordon Street 8", "lat": 43.52573625969075, "lon": -80.2192734223562}, {"address": "784 Gordon Street 4", "lat": 43.52557367197464, "lon": -80.21953370333465}, {"address": "784 Gordon Street 3", "lat": 43.52551987174852, "lon": -80.21960915198298}, {"address": "784 Gordon Street 18", "lat": 43.52637906685323, "lon": -80.21951683711676}, {"address": "784 Gordon Street 16", "lat": 43.526273237158385, "lon": -80.21936628787161}, {"address": "784 Gordon Street 11", "lat": 43.525967298815054, "lon": -80.21896637020318}, {"address": "784 Gordon Street 13", "lat": 43.526077097855655, "lon": -80.21911424706119}, {"address": "784 Gordon Street 15", "lat": 43.52622225782518, "lon": -80.21929782367518}, {"address": "784 Gordon Street 19", "lat": 43.52612111021525, "lon": -80.21969594244867}, {"address": "784 Gordon Street 20", "lat": 43.526076226647234, "lon": -80.21976741579891}, {"address": "784 Gordon Street 21", "lat": 43.52602044970217, "lon": -80.21984284332524}, {"address": "784 Gordon Street 12", "lat": 43.52602415927066, "lon": -80.21904304653887}, {"address": "784 Gordon Street 9", "lat": 43.525691209136944, "lon": -80.21920502591149}, {"address": "784 Gordon Street 6", "lat": 43.52584800176192, "lon": -80.21942675242542}, {"address": "784 Gordon Street 10", "lat": 43.525919323718604, "lon": -80.21889115093978}, {"address": "784 Gordon Street 2", "lat": 43.52547503527056, "lon": -80.21967247787701}, {"address": "784 Gordon Street 14", "lat": 43.52613594865772, "lon": -80.21918823000775}, {"address": "784 Gordon Street 17", "lat": 43.52633011211849, "lon": -80.21944024851746}, {"address": "784 Gordon Street 5", "lat": 43.52590388100733, "lon": -80.21950205944388}, {"address": "784 Gordon Street 1", "lat": 43.52541429475783, "lon": -80.21975192239141}, {"address": "784 Gordon Street 7", "lat": 43.525796043367116, "lon": -80.21935692026767}, {"address": "9A Monticello Crescent", "lat": 43.52644156473051, "lon": -80.22014870996482}, {"address": "11 Monticello Crescent", "lat": 43.52649400686898, "lon": -80.22008320520192}, {"address": "11A Monticello Crescent", "lat": 43.526540037029875, "lon": -80.22002073062795}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 137;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

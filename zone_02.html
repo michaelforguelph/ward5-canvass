@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 02 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 02</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 158</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "02";
+const ZONE_NAME = "Zone 02";
+const ZONE_POLYGON = [[43.527525, -80.258886], [43.524206, -80.25425], [43.525797, -80.251325], [43.528214, -80.253548], [43.527525, -80.258886]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.52645449353516, -80.2547131720405];     // [lat, lon]
+const ADDRESSES = [{"address": "3 Celia Crescent", "lat": 43.52690719870538, "lon": -80.25656690362975}, {"address": "5 Celia Crescent", "lat": 43.52680025849558, "lon": -80.25637074130113}, {"address": "7 Celia Crescent", "lat": 43.52670810857034, "lon": -80.25620880991148}, {"address": "9 Celia Crescent", "lat": 43.52661667512728, "lon": -80.2560663865608}, {"address": "11 Celia Crescent", "lat": 43.526525492041316, "lon": -80.25592842415784}, {"address": "15 Celia Crescent", "lat": 43.52643437864028, "lon": -80.25578984999707}, {"address": "17 Celia Crescent", "lat": 43.5263439306125, "lon": -80.25565157248954}, {"address": "19 Celia Crescent", "lat": 43.526253191052355, "lon": -80.25551390534251}, {"address": "21 Celia Crescent", "lat": 43.5261589443653, "lon": -80.25537557515085}, {"address": "23 Celia Crescent", "lat": 43.52606497415568, "lon": -80.25524018098321}, {"address": "25 Celia Crescent", "lat": 43.525970391762094, "lon": -80.25510717689792}, {"address": "27 Celia Crescent", "lat": 43.52587624755916, "lon": -80.25497345752649}, {"address": "29 Celia Crescent", "lat": 43.525781401075875, "lon": -80.25483949353364}, {"address": "31 Celia Crescent", "lat": 43.52568707331389, "lon": -80.25470598019663}, {"address": "33 Celia Crescent", "lat": 43.525574952283456, "lon": -80.25457552512346}, {"address": "35 Celia Crescent", "lat": 43.525450878379104, "lon": -80.2543371565774}, {"address": "37 Celia Crescent", "lat": 43.52545838035611, "lon": -80.2540680713307}, {"address": "39 Celia Crescent", "lat": 43.52558951179258, "lon": -80.25388444079975}, {"address": "41 Celia Crescent", "lat": 43.52571853630179, "lon": -80.25376211472052}, {"address": "43 Celia Crescent", "lat": 43.52581607849213, "lon": -80.2536308494963}, {"address": "45 Celia Crescent", "lat": 43.52591325327778, "lon": -80.2534997405866}, {"address": "47 Celia Crescent", "lat": 43.526010796167526, "lon": -80.2533686291886}, {"address": "49 Celia Crescent", "lat": 43.526108777218894, "lon": -80.25323679917608}, {"address": "4 Celia Crescent", "lat": 43.527125796599584, "lon": -80.2558359400004}, {"address": "6 Celia Crescent", "lat": 43.52701986894083, "lon": -80.25567088501674}, {"address": "8 Celia Crescent", "lat": 43.526930558928704, "lon": -80.25553178057174}, {"address": "10 Celia Crescent", "lat": 43.52683512083045, "lon": -80.25540876872633}, {"address": "22 Celia Crescent", "lat": 43.526277239988815, "lon": -80.25461984579333}, {"address": "24 Celia Crescent", "lat": 43.52619157721638, "lon": -80.25447466822067}, {"address": "26 Celia Crescent", "lat": 43.526093954031715, "lon": -80.25435614877289}, {"address": "30 Celia Crescent", "lat": 43.52599840434542, "lon": -80.25419938487126}, {"address": "42 Celia Crescent", "lat": 43.52618482502403, "lon": -80.25406150041427}, {"address": "44 Celia Crescent", "lat": 43.52627678417238, "lon": -80.25393922566859}, {"address": "46 Celia Crescent", "lat": 43.52636959867615, "lon": -80.25381820594602}, {"address": "48 Celia Crescent", "lat": 43.526449004225135, "lon": -80.25368260412053}, {"address": "50 Celia Crescent", "lat": 43.52655508771553, "lon": -80.25356030382274}, {"address": "107 Municipal Street", "lat": 43.526026773556, "lon": -80.25281087450102}, {"address": "109 Municipal Street", "lat": 43.52591831475151, "lon": -80.25293649848894}, {"address": "111 Municipal Street", "lat": 43.52582362250168, "lon": -80.25306352250014}, {"address": "113 Municipal Street", "lat": 43.52573003009398, "lon": -80.25318966879225}, {"address": "115 Municipal Street", "lat": 43.525634780210694, "lon": -80.25331614326586}, {"address": "117 Municipal Street", "lat": 43.52554064620165, "lon": -80.25344391899915}, {"address": "119 Municipal Street", "lat": 43.525445946831375, "lon": -80.25357007775752}, {"address": "121 Municipal Street", "lat": 43.525353041759736, "lon": -80.25369428975125}, {"address": "123 Municipal Street", "lat": 43.5252590843643, "lon": -80.2538210474054}, {"address": "125 Municipal Street", "lat": 43.5251639500302, "lon": -80.25394822752904}, {"address": "127 Municipal Street", "lat": 43.52507032599, "lon": -80.25407533543033}, {"address": "131 Municipal Street", "lat": 43.524885441306616, "lon": -80.25421679807167}, {"address": "133 Municipal Street", "lat": 43.524972892560285, "lon": -80.25435906069644}, {"address": "135 Municipal Street", "lat": 43.5251102696809, "lon": -80.25441479625034}, {"address": "137 Municipal Street", "lat": 43.52520110474825, "lon": -80.25454991997637}, {"address": "139 Municipal Street", "lat": 43.525289821582135, "lon": -80.25468279079188}, {"address": "141 Municipal Street", "lat": 43.5253774059693, "lon": -80.25481724874531}, {"address": "143 Municipal Street", "lat": 43.52547244991933, "lon": -80.25495318437385}, {"address": "145 Municipal Street", "lat": 43.525565193797036, "lon": -80.2550813452958}, {"address": "147 Municipal Street", "lat": 43.5256589317501, "lon": -80.25520939166839}, {"address": "149 Municipal Street", "lat": 43.525751310908596, "lon": -80.25533841913713}, {"address": "151 Municipal Street", "lat": 43.525844124343976, "lon": -80.25547179754312}, {"address": "153 Municipal Street", "lat": 43.525935355998094, "lon": -80.25560565490939}, {"address": "155 Municipal Street", "lat": 43.52602239547813, "lon": -80.25574164069806}, {"address": "157 Municipal Street", "lat": 43.52610783487142, "lon": -80.25587999774511}, {"address": "159 Municipal Street", "lat": 43.52619186569905, "lon": -80.25602497565949}, {"address": "161 Municipal Street", "lat": 43.52627624826091, "lon": -80.25616647110617}, {"address": "163 Municipal Street", "lat": 43.52635922411582, "lon": -80.25631280049426}, {"address": "165 Municipal Street", "lat": 43.526441904462274, "lon": -80.25645913267465}, {"address": "167 Municipal Street", "lat": 43.526522522735156, "lon": -80.25660589275961}, {"address": "169 Municipal Street", "lat": 43.526603065697564, "lon": -80.2567524549242}, {"address": "171 Municipal Street", "lat": 43.52668172070996, "lon": -80.25690365399844}, {"address": "173 Municipal Street", "lat": 43.526745647995504, "lon": -80.25705315572503}, {"address": "175 Municipal Street", "lat": 43.52678505381964, "lon": -80.25722024760907}, {"address": "177 Municipal Street", "lat": 43.52684453837905, "lon": -80.25740695877748}, {"address": "179 Municipal Street", "lat": 43.52692145585244, "lon": -80.25758038118164}, {"address": "183 Municipal Street", "lat": 43.52710416364971, "lon": -80.25803458107016}, {"address": "185 Municipal Street", "lat": 43.52717391390271, "lon": -80.2582232991846}, {"address": "187 Municipal Street", "lat": 43.527235898317684, "lon": -80.25836907894431}, {"address": "100 Municipal Street", "lat": 43.52606920344316, "lon": -80.25182079117563}, {"address": "102 Municipal Street", "lat": 43.52597380136613, "lon": -80.25195198392292}, {"address": "104 Municipal Street", "lat": 43.52587634799266, "lon": -80.25207960056662}, {"address": "106 Municipal Street", "lat": 43.5257801557138, "lon": -80.25220841764799}, {"address": "108 Municipal Street", "lat": 43.525684472881984, "lon": -80.25233626404092}, {"address": "110 Municipal Street", "lat": 43.52558842621693, "lon": -80.25246467385378}, {"address": "112 Municipal Street", "lat": 43.525492340933205, "lon": -80.25259298349972}, {"address": "114 Municipal Street", "lat": 43.52539646935233, "lon": -80.25272012193734}, {"address": "116 Municipal Street", "lat": 43.52530115342391, "lon": -80.25284770973359}, {"address": "118 Municipal Street", "lat": 43.52520513952843, "lon": -80.25297571162447}, {"address": "120 Municipal Street", "lat": 43.52510883006841, "lon": -80.25310356330998}, {"address": "122 Municipal Street", "lat": 43.525013622878475, "lon": -80.25323104707799}, {"address": "124 Municipal Street", "lat": 43.52491720139501, "lon": -80.2533587483618}, {"address": "126 Municipal Street", "lat": 43.52482137645754, "lon": -80.25348750855947}, {"address": "128 Municipal Street", "lat": 43.52472579884182, "lon": -80.2536145910352}, {"address": "130 Municipal Street", "lat": 43.524630186568864, "lon": -80.25374217964912}, {"address": "132 Municipal Street", "lat": 43.52451597698684, "lon": -80.25386827456039}, {"address": "134 Municipal Street", "lat": 43.524422689644396, "lon": -80.25404697454209}, {"address": "136 Municipal Street", "lat": 43.52436620896179, "lon": -80.25421979684415}, {"address": "5 Pacific Place", "lat": 43.52808938651827, "lon": -80.25410524619558}, {"address": "17 Pacific Place", "lat": 43.52788926515517, "lon": -80.25446985090332}, {"address": "19 Pacific Place", "lat": 43.52786637434824, "lon": -80.25466411858693}, {"address": "21 Pacific Place", "lat": 43.52785041547531, "lon": -80.25488075538492}, {"address": "23 Pacific Place", "lat": 43.52783220240681, "lon": -80.25503533772635}, {"address": "25 Pacific Place", "lat": 43.52781357120486, "lon": -80.25521284500628}, {"address": "27 Pacific Place", "lat": 43.52779341246848, "lon": -80.25539337192448}, {"address": "29 Pacific Place", "lat": 43.527773590795164, "lon": -80.25557219176737}, {"address": "31 Pacific Place", "lat": 43.52776051849068, "lon": -80.25574853516653}, {"address": "33 Pacific Place", "lat": 43.5277409513588, "lon": -80.25592684428979}, {"address": "35 Pacific Place", "lat": 43.52772141779344, "lon": -80.25610454279503}, {"address": "37 Pacific Place", "lat": 43.527700520949985, "lon": -80.25628130876943}, {"address": "39 Pacific Place", "lat": 43.52768107031821, "lon": -80.25646062963034}, {"address": "41 Pacific Place", "lat": 43.52766150560325, "lon": -80.25663934292493}, {"address": "43 Pacific Place", "lat": 43.52764622869641, "lon": -80.2568122812369}, {"address": "45 Pacific Place", "lat": 43.52762688047789, "lon": -80.25699058575661}, {"address": "47 Pacific Place", "lat": 43.52760721958814, "lon": -80.25716432513562}, {"address": "49 Pacific Place", "lat": 43.527575250049985, "lon": -80.25735836197406}, {"address": "51 Pacific Place", "lat": 43.5275280581241, "lon": -80.25753056397156}, {"address": "53 Pacific Place", "lat": 43.52746241163847, "lon": -80.25772742894526}, {"address": "55 Pacific Place", "lat": 43.527366041275386, "lon": -80.25790150541349}, {"address": "20 Pacific Place", "lat": 43.527494415756344, "lon": -80.25459730852117}, {"address": "22 Pacific Place", "lat": 43.52746392458515, "lon": -80.25481220849846}, {"address": "24 Pacific Place", "lat": 43.527434763899784, "lon": -80.25499519778985}, {"address": "26 Pacific Place", "lat": 43.527421860333355, "lon": -80.25518113506045}, {"address": "28 Pacific Place", "lat": 43.52739173710116, "lon": -80.25538370941673}, {"address": "30 Pacific Place", "lat": 43.527360267804355, "lon": -80.2555750091872}, {"address": "42 Pacific Place", "lat": 43.52714199715209, "lon": -80.25672186224412}, {"address": "44 Pacific Place", "lat": 43.527110730072295, "lon": -80.25691040091236}, {"address": "46 Pacific Place", "lat": 43.52710088720971, "lon": -80.25709836830684}, {"address": "50 Pacific Place", "lat": 43.527087062307295, "lon": -80.2573546631881}, {"address": "3 Pillet Place", "lat": 43.52651396539735, "lon": -80.25447745920569}, {"address": "5 Pillet Place", "lat": 43.526665927927795, "lon": -80.25442583452481}, {"address": "7 Pillet Place", "lat": 43.52681051316052, "lon": -80.25450592086227}, {"address": "4 Pillet Place", "lat": 43.52693629039565, "lon": -80.25508903636243}, {"address": "6 Pillet Place", "lat": 43.526972823612134, "lon": -80.25489287883477}, {"address": "8 Pillet Place", "lat": 43.52693633982803, "lon": -80.2546851722021}, {"address": "3 Elson Drive", "lat": 43.52717259478468, "lon": -80.25457267929204}, {"address": "5 Elson Drive", "lat": 43.52706853557348, "lon": -80.25438347598377}, {"address": "7 Elson Drive", "lat": 43.52697140516458, "lon": -80.2542331181763}, {"address": "9 Elson Drive", "lat": 43.52687011941845, "lon": -80.25409026050006}, {"address": "11 Elson Drive", "lat": 43.52676916714141, "lon": -80.25394775434847}, {"address": "15 Elson Drive", "lat": 43.52666028016584, "lon": -80.25380428224791}, {"address": "51 Celia Crescent", "lat": 43.52620905469422, "lon": -80.25308395777036}, {"address": "2 Elson Drive", "lat": 43.52752319464728, "lon": -80.25404211882429}, {"address": "4 Elson Drive", "lat": 43.52738120154674, "lon": -80.25391775765716}, {"address": "6 Elson Drive", "lat": 43.52729574396602, "lon": -80.25377587137895}, {"address": "8 Elson Drive", "lat": 43.52720524042746, "lon": -80.25364656498668}, {"address": "10 Elson Drive", "lat": 43.52711546006356, "lon": -80.25351481962333}, {"address": "12 Elson Drive", "lat": 43.527024658759224, "lon": -80.25338491130506}, {"address": "14 Elson Drive", "lat": 43.52693495698939, "lon": -80.25325407901771}, {"address": "16 Elson Drive", "lat": 43.52684426390852, "lon": -80.25312396719133}, {"address": "18 Elson Drive", "lat": 43.52675383198658, "lon": -80.25299415942688}, {"address": "20 Elson Drive", "lat": 43.5266635733906, "lon": -80.25286292680218}, {"address": "22 Elson Drive", "lat": 43.526573546332294, "lon": -80.25273311481389}, {"address": "24 Elson Drive", "lat": 43.52648373794455, "lon": -80.2526028921415}, {"address": "26 Elson Drive", "lat": 43.52639322406548, "lon": -80.25247207096412}, {"address": "28 Elson Drive", "lat": 43.52630484599002, "lon": -80.25232378650574}, {"address": "20 Celia Crescent", "lat": 43.526369774991814, "lon": -80.25479519923034}, {"address": "34 Pacific Place", "lat": 43.527342483575644, "lon": -80.2559060124666}, {"address": "12 Celia Crescent", "lat": 43.526712737524036, "lon": -80.25527691776804}, {"address": "1 Celia Crescent", "lat": 43.52717339916474, "lon": -80.25649748882}, {"address": "6 Pacific Place", "lat": 43.52780818580474, "lon": -80.25366318259618}, {"address": "167 Municipal Street 2", "lat": 43.526555052181976, "lon": -80.25657070392225}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 158;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

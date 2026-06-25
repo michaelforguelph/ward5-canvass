@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 01 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 01</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 208</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "01";
+const ZONE_NAME = "Zone 01";
+const ZONE_POLYGON = [[43.527997, -80.255139], [43.530901, -80.24954], [43.53311, -80.2524], [43.529504, -80.257689], [43.527997, -80.255139]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.53045808420757, -80.25359192803093];     // [lat, lon]
+const ADDRESSES = [{"address": "55 Cedar Street", "lat": 43.5313783927669, "lon": -80.25043870778272}, {"address": "57 Cedar Street", "lat": 43.53125900679978, "lon": -80.25072552865053}, {"address": "59 Cedar Street", "lat": 43.531145852901346, "lon": -80.25087712547344}, {"address": "61 Cedar Street", "lat": 43.53102279170951, "lon": -80.25104222992721}, {"address": "63 Cedar Street", "lat": 43.53089428182117, "lon": -80.25121434512926}, {"address": "65 Cedar Street", "lat": 43.53077685327469, "lon": -80.25137217712124}, {"address": "67 Cedar Street", "lat": 43.53066772893994, "lon": -80.25152544685031}, {"address": "69 Cedar Street", "lat": 43.53055638940825, "lon": -80.25168959189992}, {"address": "71 Cedar Street", "lat": 43.53045106221794, "lon": -80.25184266257244}, {"address": "73 Cedar Street", "lat": 43.530352300234235, "lon": -80.25197887273403}, {"address": "75 Cedar Street", "lat": 43.53024770053579, "lon": -80.25211905660463}, {"address": "77 Cedar Street", "lat": 43.530135985920424, "lon": -80.2522822919687}, {"address": "79 Cedar Street", "lat": 43.53000789479372, "lon": -80.25246255600543}, {"address": "83 Cedar Street", "lat": 43.52986788433829, "lon": -80.25265285076749}, {"address": "87 Cedar Street", "lat": 43.52995815181149, "lon": -80.25281379357057}, {"address": "91 Cedar Street", "lat": 43.5300706186847, "lon": -80.25296863273618}, {"address": "56 Cedar Street", "lat": 43.530917688405374, "lon": -80.25043001690815}, {"address": "60 Cedar Street", "lat": 43.530671565529246, "lon": -80.25075971706613}, {"address": "62 Cedar Street", "lat": 43.530499868830965, "lon": -80.25099390541483}, {"address": "64 Cedar Street", "lat": 43.530297636324484, "lon": -80.25096948999501}, {"address": "66 Cedar Street", "lat": 43.53018097645716, "lon": -80.25118276875484}, {"address": "68 Cedar Street", "lat": 43.53004068228164, "lon": -80.25139720158994}, {"address": "72 Cedar Street", "lat": 43.529922414277515, "lon": -80.25157896817184}, {"address": "74 Cedar Street", "lat": 43.52982820503125, "lon": -80.25172328043625}, {"address": "76 Cedar Street", "lat": 43.52973409375772, "lon": -80.25186566789013}, {"address": "78 Cedar Street", "lat": 43.52964095607766, "lon": -80.25201032118828}, {"address": "80 Cedar Street", "lat": 43.529543453132305, "lon": -80.25215857848823}, {"address": "84 Cedar Street", "lat": 43.52931046289092, "lon": -80.2527208667886}, {"address": "86 Cedar Street", "lat": 43.52951306345153, "lon": -80.2530331492204}, {"address": "88 Cedar Street", "lat": 43.52966363502729, "lon": -80.25320591732783}, {"address": "282 Water Street", "lat": 43.52977759408196, "lon": -80.25336899994078}, {"address": "185 Edinburgh Road South", "lat": 43.53268534656433, "lon": -80.25230761840953}, {"address": "187 Edinburgh Road South", "lat": 43.53260300221847, "lon": -80.25214586458331}, {"address": "189 Edinburgh Road South", "lat": 43.53250748370094, "lon": -80.25201124141985}, {"address": "191 Edinburgh Road South", "lat": 43.532366037561054, "lon": -80.25181295740498}, {"address": "193 Edinburgh Road South", "lat": 43.53225512106033, "lon": -80.25165860281976}, {"address": "195 Edinburgh Road South", "lat": 43.53214471119616, "lon": -80.25150272152575}, {"address": "205 Edinburgh Road South", "lat": 43.53166971063871, "lon": -80.25070219327071}, {"address": "207 Edinburgh Road South", "lat": 43.531474303674344, "lon": -80.25057109346626}, {"address": "211 Edinburgh Road South", "lat": 43.531151225715156, "lon": -80.2501157812909}, {"address": "16 Manor Park Crescent", "lat": 43.532884275876285, "lon": -80.25243047504279}, {"address": "18 Manor Park Crescent", "lat": 43.53275580261598, "lon": -80.25260299689475}, {"address": "20 Manor Park Crescent", "lat": 43.53262195601002, "lon": -80.25272078438516}, {"address": "24 Manor Park Crescent", "lat": 43.53244194542574, "lon": -80.2528459864662}, {"address": "32 Manor Park Crescent", "lat": 43.53218017412117, "lon": -80.25285342727925}, {"address": "34 Manor Park Crescent", "lat": 43.53231368416644, "lon": -80.25268398768652}, {"address": "36 Manor Park Crescent", "lat": 43.532337811719515, "lon": -80.25230152242627}, {"address": "25 Manor Park Crescent 1", "lat": 43.53198439086174, "lon": -80.25347120663756}, {"address": "25 Manor Park Crescent 2", "lat": 43.531755996484186, "lon": -80.25361948513526}, {"address": "25 Manor Park Crescent 3", "lat": 43.53165316514041, "lon": -80.25375844471967}, {"address": "25 Manor Park Crescent 4", "lat": 43.531546422772884, "lon": -80.25389556101585}, {"address": "25 Manor Park Crescent 5", "lat": 43.53143603638142, "lon": -80.25398771211823}, {"address": "25 Manor Park Crescent 6", "lat": 43.53126788568035, "lon": -80.25411872070613}, {"address": "25 Manor Park Crescent 7", "lat": 43.53112705571993, "lon": -80.25405957749241}, {"address": "25 Manor Park Crescent 8", "lat": 43.53098065534461, "lon": -80.25384404183538}, {"address": "25 Manor Park Crescent 9", "lat": 43.53091126111591, "lon": -80.25364916927319}, {"address": "25 Manor Park Crescent 10", "lat": 43.531329265315364, "lon": -80.2530700533715}, {"address": "25 Manor Park Crescent 11", "lat": 43.53143796665784, "lon": -80.25325100890448}, {"address": "25 Manor Park Crescent 12", "lat": 43.53153153625286, "lon": -80.25334194424579}, {"address": "25 Manor Park Crescent 13", "lat": 43.53127242065299, "lon": -80.25359587937997}, {"address": "25 Manor Park Crescent 14", "lat": 43.531306697124535, "lon": -80.25354955978158}, {"address": "25 Manor Park Crescent 15", "lat": 43.53133967774559, "lon": -80.25350142820822}, {"address": "27 Manor Park Crescent", "lat": 43.53180903627294, "lon": -80.25312966501711}, {"address": "29 Manor Park Crescent", "lat": 43.53160942729304, "lon": -80.25291962870058}, {"address": "31 Manor Park Crescent", "lat": 43.53153697278887, "lon": -80.25264582644148}, {"address": "33 Manor Park Crescent", "lat": 43.531599341406135, "lon": -80.25236970094329}, {"address": "35 Manor Park Crescent", "lat": 43.5317220135011, "lon": -80.2521562436573}, {"address": "37 Manor Park Crescent", "lat": 43.531894007116826, "lon": -80.25194450748923}, {"address": "39 Manor Park Crescent", "lat": 43.532154581626465, "lon": -80.25199086354466}, {"address": "245 Water Street", "lat": 43.53201257667876, "lon": -80.25119559958938}, {"address": "247 Water Street", "lat": 43.53188973206182, "lon": -80.25135891849968}, {"address": "249 Water Street", "lat": 43.53177380410882, "lon": -80.25151506476855}, {"address": "251 Water Street", "lat": 43.53165805394525, "lon": -80.251670343165}, {"address": "253 Water Street", "lat": 43.53154267528354, "lon": -80.25182587255199}, {"address": "255 Water Street", "lat": 43.53142774022994, "lon": -80.25198180178717}, {"address": "257 Water Street", "lat": 43.53131154835326, "lon": -80.25213723855022}, {"address": "259 Water Street", "lat": 43.53117915120028, "lon": -80.2522892055042}, {"address": "261 Water Street", "lat": 43.53092379355438, "lon": -80.25251600431486}, {"address": "263 Water Street", "lat": 43.53103236015447, "lon": -80.25268406255607}, {"address": "265 Water Street", "lat": 43.53103656372066, "lon": -80.25291062652055}, {"address": "267 Water Street", "lat": 43.530927884423875, "lon": -80.25311138417602}, {"address": "269 Water Street", "lat": 43.53079745186993, "lon": -80.25326325695711}, {"address": "271 Water Street", "lat": 43.53062349545361, "lon": -80.25324637320479}, {"address": "275 Water Street", "lat": 43.530492446248324, "lon": -80.25308218889603}, {"address": "281 Water Street", "lat": 43.531021770449364, "lon": -80.25449913956521}, {"address": "287 Water Street", "lat": 43.530170899663055, "lon": -80.25424791296568}, {"address": "289 Water Street", "lat": 43.52971326804241, "lon": -80.25424410422657}, {"address": "291 Water Street", "lat": 43.52969249639093, "lon": -80.25464773966264}, {"address": "295 Water Street 1", "lat": 43.529383454146945, "lon": -80.25466299762213}, {"address": "295 Water Street 3", "lat": 43.529325086457774, "lon": -80.25471401739225}, {"address": "295 Water Street 5", "lat": 43.52928393719109, "lon": -80.25479993896391}, {"address": "295 Water Street 7", "lat": 43.52922732950587, "lon": -80.25485271518953}, {"address": "295 Water Street 9", "lat": 43.52919618069753, "lon": -80.25491798517184}, {"address": "295 Water Street 11", "lat": 43.52914309068278, "lon": -80.25497584006789}, {"address": "295 Water Street 15", "lat": 43.52909689803703, "lon": -80.25504560538755}, {"address": "295 Water Street 17", "lat": 43.52904258902056, "lon": -80.25509548061366}, {"address": "295 Water Street 19", "lat": 43.529535192235784, "lon": -80.25491510385751}, {"address": "295 Water Street 21", "lat": 43.52957825495556, "lon": -80.25496568431299}, {"address": "295 Water Street 23", "lat": 43.52961592130591, "lon": -80.25504720058171}, {"address": "295 Water Street 25", "lat": 43.529672833960795, "lon": -80.25510271190667}, {"address": "295 Water Street 27", "lat": 43.52970705989115, "lon": -80.25517941954176}, {"address": "295 Water Street 29", "lat": 43.529898278425385, "lon": -80.25498035771423}, {"address": "295 Water Street 31", "lat": 43.52993776733588, "lon": -80.25490118934492}, {"address": "295 Water Street 33", "lat": 43.5299697813803, "lon": -80.25482554958508}, {"address": "295 Water Street 35", "lat": 43.5300059486596, "lon": -80.25475054544707}, {"address": "295 Water Street 37", "lat": 43.530046755137995, "lon": -80.25466909212501}, {"address": "295 Water Street 39", "lat": 43.53023033454759, "lon": -80.25492046880476}, {"address": "295 Water Street 41", "lat": 43.53019310143792, "lon": -80.25499843286339}, {"address": "295 Water Street 43", "lat": 43.53015169579276, "lon": -80.25507530220432}, {"address": "295 Water Street 45", "lat": 43.53012185811839, "lon": -80.25515111328593}, {"address": "295 Water Street 47", "lat": 43.5300826139813, "lon": -80.25522586312867}, {"address": "295 Water Street 49", "lat": 43.52982633003628, "lon": -80.25530332047904}, {"address": "295 Water Street 51", "lat": 43.52987775672426, "lon": -80.25535654714687}, {"address": "295 Water Street 53", "lat": 43.52992147357998, "lon": -80.25543197265415}, {"address": "295 Water Street 55", "lat": 43.52996900857067, "lon": -80.25549100447846}, {"address": "295 Water Street 57", "lat": 43.53000944071132, "lon": -80.25556216020013}, {"address": "295 Water Street 59", "lat": 43.53006445650879, "lon": -80.25562439952527}, {"address": "295 Water Street 61", "lat": 43.53025784184466, "lon": -80.25547602390735}, {"address": "295 Water Street 63", "lat": 43.53029501279625, "lon": -80.25540007928124}, {"address": "295 Water Street 65", "lat": 43.53033281167231, "lon": -80.25532308728565}, {"address": "295 Water Street 67", "lat": 43.5303680058704, "lon": -80.255245034479}, {"address": "295 Water Street 69", "lat": 43.53040642407506, "lon": -80.25516209066573}, {"address": "295 Water Street 71", "lat": 43.53059024948103, "lon": -80.25542610654449}, {"address": "295 Water Street 73", "lat": 43.530554450978215, "lon": -80.25550305316033}, {"address": "295 Water Street 75", "lat": 43.530520696832696, "lon": -80.25557661208008}, {"address": "295 Water Street 77", "lat": 43.53048140733498, "lon": -80.25565384153923}, {"address": "295 Water Street 79", "lat": 43.53044249226849, "lon": -80.25572953542941}, {"address": "295 Water Street 81", "lat": 43.530296572521166, "lon": -80.25590339753596}, {"address": "295 Water Street 83", "lat": 43.53024288974141, "lon": -80.25595491867487}, {"address": "295 Water Street 85", "lat": 43.53018439808493, "lon": -80.25600814602291}, {"address": "295 Water Street 87", "lat": 43.530133555756215, "lon": -80.25605989318242}, {"address": "295 Water Street 89", "lat": 43.53007690879427, "lon": -80.25611253333398}, {"address": "295 Water Street 91", "lat": 43.530020217609156, "lon": -80.25616765274876}, {"address": "295 Water Street 93", "lat": 43.52996367148031, "lon": -80.25621919127659}, {"address": "295 Water Street 95", "lat": 43.52990402043218, "lon": -80.2562735993771}, {"address": "295 Water Street 97", "lat": 43.529850986754504, "lon": -80.2563237468559}, {"address": "295 Water Street 99", "lat": 43.52979865382142, "lon": -80.25637573082163}, {"address": "295 Water Street 101", "lat": 43.52974520491086, "lon": -80.25642641784427}, {"address": "295 Water Street 103", "lat": 43.52968870544695, "lon": -80.25648404281016}, {"address": "295 Water Street 105", "lat": 43.52991334340794, "lon": -80.25580699616297}, {"address": "295 Water Street 107", "lat": 43.529860367833, "lon": -80.25585773860537}, {"address": "295 Water Street 109", "lat": 43.52979920821042, "lon": -80.25591192542956}, {"address": "295 Water Street 111", "lat": 43.52974673806566, "lon": -80.2559638272396}, {"address": "295 Water Street 113", "lat": 43.529691731788056, "lon": -80.2560193849072}, {"address": "295 Water Street 115", "lat": 43.5296376610642, "lon": -80.25607785529371}, {"address": "295 Water Street 117", "lat": 43.52958484205317, "lon": -80.25612749268855}, {"address": "295 Water Street 119", "lat": 43.52952753087344, "lon": -80.2561792147731}, {"address": "295 Water Street 121", "lat": 43.52955679159776, "lon": -80.25660571245801}, {"address": "295 Water Street 123", "lat": 43.52950092643671, "lon": -80.2566596748215}, {"address": "295 Water Street 125", "lat": 43.52944097080694, "lon": -80.25671020116401}, {"address": "295 Water Street 127", "lat": 43.52938514338518, "lon": -80.25676429775481}, {"address": "295 Water Street 129", "lat": 43.529329591637136, "lon": -80.25681855916552}, {"address": "295 Water Street 131", "lat": 43.52927173486217, "lon": -80.25686812261961}, {"address": "295 Water Street 133", "lat": 43.529086817659234, "lon": -80.2566118350126}, {"address": "295 Water Street 135", "lat": 43.529140250877056, "lon": -80.25655885946576}, {"address": "295 Water Street 137", "lat": 43.529201872098724, "lon": -80.25650831400625}, {"address": "295 Water Street 139", "lat": 43.52926122347522, "lon": -80.25645668254347}, {"address": "295 Water Street 141", "lat": 43.52931527568959, "lon": -80.25640710356929}, {"address": "295 Water Street 143", "lat": 43.52937091534432, "lon": -80.2563486677296}, {"address": "295 Water Street 145", "lat": 43.529409336762804, "lon": -80.25599249058426}, {"address": "295 Water Street 147", "lat": 43.52936879128177, "lon": -80.25591909795858}, {"address": "295 Water Street 149", "lat": 43.52931726615877, "lon": -80.25586592567839}, {"address": "295 Water Street 151", "lat": 43.52927599730969, "lon": -80.25579180333257}, {"address": "295 Water Street 153", "lat": 43.52922255547813, "lon": -80.25573633319111}, {"address": "295 Water Street 155", "lat": 43.52918932353132, "lon": -80.25619000925403}, {"address": "295 Water Street 157", "lat": 43.52912997348109, "lon": -80.25612875048544}, {"address": "295 Water Street 159", "lat": 43.52909384644604, "lon": -80.25605203546831}, {"address": "295 Water Street 161", "lat": 43.529005444537354, "lon": -80.2558389138461}, {"address": "295 Water Street 163", "lat": 43.528948909154934, "lon": -80.25589457265056}, {"address": "295 Water Street 165", "lat": 43.52890921363123, "lon": -80.25596894122934}, {"address": "295 Water Street 167", "lat": 43.52885467312042, "lon": -80.25602716792629}, {"address": "295 Water Street 169", "lat": 43.52881331985539, "lon": -80.25609711147355}, {"address": "295 Water Street 171", "lat": 43.52875590108054, "lon": -80.25615333141394}, {"address": "295 Water Street 173", "lat": 43.528574685296086, "lon": -80.25589670564624}, {"address": "295 Water Street 175", "lat": 43.52862894905777, "lon": -80.25583996134924}, {"address": "295 Water Street 177", "lat": 43.528671687892114, "lon": -80.25576309788688}, {"address": "295 Water Street 179", "lat": 43.52872409795359, "lon": -80.25571138444315}, {"address": "295 Water Street 181", "lat": 43.528765239586164, "lon": -80.25563925910323}, {"address": "295 Water Street 183", "lat": 43.528819503207245, "lon": -80.25558251315874}, {"address": "295 Water Street 185", "lat": 43.529143605912274, "lon": -80.25559710363481}, {"address": "295 Water Street 187", "lat": 43.52908838007867, "lon": -80.25555059567428}, {"address": "295 Water Street 189", "lat": 43.52905394848037, "lon": -80.25546909198368}, {"address": "295 Water Street 191", "lat": 43.5289985630511, "lon": -80.25541426252913}, {"address": "295 Water Street 193", "lat": 43.52895854300796, "lon": -80.25534335299697}, {"address": "246 Water Street", "lat": 43.531558093020635, "lon": -80.25085174747188}, {"address": "248 Water Street", "lat": 43.53145108745072, "lon": -80.25099612292516}, {"address": "250 Water Street", "lat": 43.531337496539805, "lon": -80.2511486892109}, {"address": "252 Water Street", "lat": 43.531214145197225, "lon": -80.25131450760006}, {"address": "254 Water Street", "lat": 43.53108563488679, "lon": -80.2514866203044}, {"address": "256 Water Street", "lat": 43.53096882741731, "lon": -80.25164378867979}, {"address": "258 Water Street", "lat": 43.53085953075544, "lon": -80.25179320798473}, {"address": "260 Water Street", "lat": 43.53074561825834, "lon": -80.25195307441939}, {"address": "262 Water Street", "lat": 43.53063801256969, "lon": -80.25210186530653}, {"address": "264 Water Street", "lat": 43.53053759711274, "lon": -80.25224468468828}, {"address": "268 Water Street", "lat": 43.530427507891524, "lon": -80.25234063288107}, {"address": "270 Water Street", "lat": 43.53031654316218, "lon": -80.25252854341988}, {"address": "274 Water Street", "lat": 43.53018572705589, "lon": -80.25270372259085}, {"address": "286 Water Street", "lat": 43.52930345651872, "lon": -80.2533985192129}, {"address": "290 Water Street", "lat": 43.52926228953472, "lon": -80.2538662841005}, {"address": "295 Water Street", "lat": 43.52956579280842, "lon": -80.2556435637596}, {"address": "312 Water Street", "lat": 43.52885292482985, "lon": -80.25467542380522}, {"address": "314 Water Street", "lat": 43.528796350580194, "lon": -80.2547599815512}, {"address": "316 Water Street", "lat": 43.52875230660636, "lon": -80.25482355110574}, {"address": "318 Water Street", "lat": 43.5287092631621, "lon": -80.25488576924693}, {"address": "320 Water Street", "lat": 43.52866478520124, "lon": -80.25494879944858}, {"address": "322 Water Street", "lat": 43.52857905473189, "lon": -80.25507489784025}, {"address": "11 Denver Road", "lat": 43.52866284045298, "lon": -80.25440558439377}, {"address": "25 Manor Park Crescent", "lat": 43.53184739911105, "lon": -80.25404910992859}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 208;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 36 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 36</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 197</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "36";
+const ZONE_NAME = "Zone 36";
+const ZONE_POLYGON = [[43.531124, -80.202475], [43.529119, -80.204542], [43.528289, -80.204263], [43.526739, -80.202377], [43.528785, -80.199668], [43.528491, -80.199193], [43.528674, -80.198732], [43.531276, -80.200589], [43.531124, -80.202475]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.52918177821739, -80.20184445573842];     // [lat, lon]
+const ADDRESSES = [{"address": "73 Zaduk Place", "lat": 43.530993074972095, "lon": -80.20236644494518}, {"address": "75 Zaduk Place", "lat": 43.53097541209894, "lon": -80.20213813285756}, {"address": "77 Zaduk Place", "lat": 43.53098603255871, "lon": -80.20193945658359}, {"address": "79 Zaduk Place", "lat": 43.5310025339191, "lon": -80.20174899069575}, {"address": "81 Zaduk Place", "lat": 43.53100953235302, "lon": -80.2015616808886}, {"address": "83 Zaduk Place", "lat": 43.531045056034664, "lon": -80.20136164240839}, {"address": "85 Zaduk Place", "lat": 43.53104966330387, "lon": -80.20117756682663}, {"address": "87 Zaduk Place", "lat": 43.53104973429385, "lon": -80.20095759341115}, {"address": "199 Mccann Street", "lat": 43.53077639588789, "lon": -80.20241290259875}, {"address": "191 Mccann Street", "lat": 43.53053655400812, "lon": -80.20247015348302}, {"address": "193 Mccann Street", "lat": 43.53059965651657, "lon": -80.20245558499313}, {"address": "197 Mccann Street", "lat": 43.53072019300822, "lon": -80.20242858935653}, {"address": "195 Mccann Street", "lat": 43.53065224187165, "lon": -80.20244330595455}, {"address": "187 Mccann Street", "lat": 43.530464210722435, "lon": -80.20249159831853}, {"address": "179 Mccann Street", "lat": 43.53022634237835, "lon": -80.20256199760117}, {"address": "181 Mccann Street", "lat": 43.53028362725533, "lon": -80.20254548872046}, {"address": "183 Mccann Street", "lat": 43.53034406797903, "lon": -80.20252599283495}, {"address": "185 Mccann Street", "lat": 43.53039870328708, "lon": -80.2025081178809}, {"address": "169 Mccann Street", "lat": 43.52997197871099, "lon": -80.20265944374668}, {"address": "171 Mccann Street", "lat": 43.53003688000025, "lon": -80.2026280496484}, {"address": "175 Mccann Street", "lat": 43.53015600209931, "lon": -80.20258493306376}, {"address": "173 Mccann Street", "lat": 43.53009583047258, "lon": -80.20260544502614}, {"address": "157 Mccann Street", "lat": 43.52968446672762, "lon": -80.20296608476687}, {"address": "159 Mccann Street", "lat": 43.52975470850328, "lon": -80.2028680494592}, {"address": "161 Mccann Street", "lat": 43.52979873474993, "lon": -80.20281228488102}, {"address": "163 Mccann Street", "lat": 43.52984936403416, "lon": -80.20276198365042}, {"address": "165 Mccann Street", "lat": 43.52990483030047, "lon": -80.20270508930331}, {"address": "289 Macalister Boulevard", "lat": 43.530277053414096, "lon": -80.20040879110543}, {"address": "287 Macalister Boulevard", "lat": 43.53014572423347, "lon": -80.20035071263057}, {"address": "285 Macalister Boulevard", "lat": 43.53001307562318, "lon": -80.20029079179649}, {"address": "278 Macalister Boulevard", "lat": 43.52981072297285, "lon": -80.20079309457489}, {"address": "280 Macalister Boulevard", "lat": 43.52989296352768, "lon": -80.20083053847823}, {"address": "282 Macalister Boulevard", "lat": 43.52997116262142, "lon": -80.20087707739337}, {"address": "284 Macalister Boulevard", "lat": 43.530052062489894, "lon": -80.20091633489717}, {"address": "286 Macalister Boulevard", "lat": 43.53013438629138, "lon": -80.20093915630531}, {"address": "288 Macalister Boulevard", "lat": 43.53021673136668, "lon": -80.20095832298918}, {"address": "290 Macalister Boulevard", "lat": 43.530316290461165, "lon": -80.20099047092542}, {"address": "35 Dudley Drive", "lat": 43.53032597264558, "lon": -80.20139087522205}, {"address": "33 Dudley Drive", "lat": 43.53021554472358, "lon": -80.2013988220732}, {"address": "31 Dudley Drive", "lat": 43.53013833181083, "lon": -80.20141261121827}, {"address": "29 Dudley Drive", "lat": 43.53005845885634, "lon": -80.20142637230916}, {"address": "27 Dudley Drive", "lat": 43.52997988398494, "lon": -80.20144563076452}, {"address": "25 Dudley Drive", "lat": 43.529901247031596, "lon": -80.20147585467947}, {"address": "23 Dudley Drive", "lat": 43.529822568383906, "lon": -80.20151338926213}, {"address": "21 Dudley Drive", "lat": 43.52974663224312, "lon": -80.20153633154138}, {"address": "19 Dudley Drive", "lat": 43.52966265478435, "lon": -80.20157015390984}, {"address": "17 Dudley Drive", "lat": 43.52957857263906, "lon": -80.20162225360298}, {"address": "15 Dudley Drive", "lat": 43.52949849117738, "lon": -80.2016725678221}, {"address": "11 Dudley Drive", "lat": 43.529426283331404, "lon": -80.20174124587179}, {"address": "9 Dudley Drive", "lat": 43.52935401333086, "lon": -80.20182088916894}, {"address": "7 Dudley Drive", "lat": 43.529303020027854, "lon": -80.20190076281841}, {"address": "5 Dudley Drive", "lat": 43.52924404743294, "lon": -80.20198054972055}, {"address": "3 Dudley Drive", "lat": 43.529185096095205, "lon": -80.20205668174457}, {"address": "2 Dudley Drive", "lat": 43.529409233804834, "lon": -80.20257076969469}, {"address": "4 Dudley Drive", "lat": 43.52947746468685, "lon": -80.20247313337642}, {"address": "6 Dudley Drive", "lat": 43.52953583841666, "lon": -80.20239238182627}, {"address": "8 Dudley Drive", "lat": 43.52959809474332, "lon": -80.20231524950326}, {"address": "10 Dudley Drive", "lat": 43.529681214040245, "lon": -80.20223118774798}, {"address": "12 Dudley Drive", "lat": 43.52977530647624, "lon": -80.20216244797464}, {"address": "14 Dudley Drive", "lat": 43.52986201209018, "lon": -80.2021338734952}, {"address": "16 Dudley Drive", "lat": 43.529942887332204, "lon": -80.20210076344297}, {"address": "18 Dudley Drive", "lat": 43.53002566833822, "lon": -80.20207572176845}, {"address": "20 Dudley Drive", "lat": 43.530099381013, "lon": -80.20204342871034}, {"address": "22 Dudley Drive", "lat": 43.53018153737162, "lon": -80.20201390898609}, {"address": "24 Dudley Drive", "lat": 43.530259061605626, "lon": -80.20199775523353}, {"address": "26 Dudley Drive", "lat": 43.53034052132328, "lon": -80.20197627630897}, {"address": "28 Dudley Drive", "lat": 43.53042976733179, "lon": -80.20195846055327}, {"address": "30 Dudley Drive", "lat": 43.53052320395792, "lon": -80.20189060556865}, {"address": "32 Dudley Drive", "lat": 43.53060249036661, "lon": -80.20179398045914}, {"address": "34 Dudley Drive", "lat": 43.53066306634183, "lon": -80.20166942871177}, {"address": "36 Dudley Drive", "lat": 43.530692512532646, "lon": -80.20152665460704}, {"address": "38 Dudley Drive", "lat": 43.530699068625594, "lon": -80.20140420127865}, {"address": "40 Dudley Drive", "lat": 43.530697139918324, "lon": -80.2012861295019}, {"address": "42 Dudley Drive", "lat": 43.5306899452747, "lon": -80.20117873194097}, {"address": "44 Dudley Drive", "lat": 43.5306873206736, "lon": -80.20106870117893}, {"address": "46 Dudley Drive", "lat": 43.53068611909858, "lon": -80.20093722194753}, {"address": "15 Kirvan Drive", "lat": 43.52895666639135, "lon": -80.20272497979401}, {"address": "11 Kirvan Drive", "lat": 43.529037670521795, "lon": -80.2028323527702}, {"address": "9 Kirvan Drive", "lat": 43.52910836036965, "lon": -80.20293677545183}, {"address": "7 Kirvan Drive", "lat": 43.529186306278675, "lon": -80.20303701649188}, {"address": "5 Kirvan Drive", "lat": 43.5292611445044, "lon": -80.20313864390634}, {"address": "3 Kirvan Drive", "lat": 43.529330759736176, "lon": -80.20325015400532}, {"address": "1 Kirvan Drive", "lat": 43.52941885725405, "lon": -80.20338174521376}, {"address": "3 Mccann Street", "lat": 43.52965042936614, "lon": -80.20056091552118}, {"address": "5 Mccann Street", "lat": 43.529613545919155, "lon": -80.20064391965485}, {"address": "7 Mccann Street", "lat": 43.5295578460158, "lon": -80.20075238339535}, {"address": "9 Mccann Street", "lat": 43.52952202021227, "lon": -80.20081358762812}, {"address": "11 Mccann Street", "lat": 43.52946460003187, "lon": -80.20089637003377}, {"address": "13 Mccann Street", "lat": 43.52942790640116, "lon": -80.2009460157799}, {"address": "15 Mccann Street", "lat": 43.52936581075347, "lon": -80.20103003159865}, {"address": "17 Mccann Street", "lat": 43.52932348705289, "lon": -80.20108474867641}, {"address": "19 Mccann Street", "lat": 43.52927737105553, "lon": -80.20114968952367}, {"address": "21 Mccann Street", "lat": 43.529233151603904, "lon": -80.20120951773039}, {"address": "23 Mccann Street", "lat": 43.52918513894669, "lon": -80.20127957092139}, {"address": "25 Mccann Street", "lat": 43.52913903642804, "lon": -80.20134194588388}, {"address": "27 Mccann Street", "lat": 43.52907697036161, "lon": -80.20142082845157}, {"address": "29 Mccann Street", "lat": 43.52903554313727, "lon": -80.20148196956973}, {"address": "31 Mccann Street", "lat": 43.52898291380742, "lon": -80.2015429910751}, {"address": "33 Mccann Street", "lat": 43.52894435406656, "lon": -80.20159261485763}, {"address": "35 Mccann Street", "lat": 43.52888505029976, "lon": -80.20167794265501}, {"address": "37 Mccann Street", "lat": 43.52881924966071, "lon": -80.20175678345696}, {"address": "4 Mccann Street", "lat": 43.52927927541019, "lon": -80.20039436452313}, {"address": "6 Mccann Street", "lat": 43.529217987873196, "lon": -80.20047928580037}, {"address": "8 Mccann Street", "lat": 43.52917151156967, "lon": -80.20053617416319}, {"address": "10 Mccann Street", "lat": 43.529125715439825, "lon": -80.2006021320041}, {"address": "12 Mccann Street", "lat": 43.52908584915872, "lon": -80.20065607171192}, {"address": "14 Mccann Street", "lat": 43.52903127441526, "lon": -80.20071992021185}, {"address": "18 Mccann Street", "lat": 43.52897511958121, "lon": -80.20080388943778}, {"address": "20 Mccann Street", "lat": 43.528920476126856, "lon": -80.20087981935953}, {"address": "22 Mccann Street", "lat": 43.52887546471764, "lon": -80.20093672368085}, {"address": "24 Mccann Street", "lat": 43.52883044213087, "lon": -80.20099564028513}, {"address": "26 Mccann Street", "lat": 43.52877875101951, "lon": -80.20106757450691}, {"address": "30 Mccann Street", "lat": 43.528724153762425, "lon": -80.20113545075162}, {"address": "32 Mccann Street", "lat": 43.52867684670154, "lon": -80.20120944551094}, {"address": "34 Mccann Street", "lat": 43.52863626384061, "lon": -80.2012603557495}, {"address": "36 Mccann Street", "lat": 43.52859344475538, "lon": -80.2013182899086}, {"address": "38 Mccann Street", "lat": 43.528532870980925, "lon": -80.2014062367398}, {"address": "275 Macalister Boulevard", "lat": 43.529404654336545, "lon": -80.1998984360004}, {"address": "277 Macalister Boulevard", "lat": 43.529540659467784, "lon": -80.19997630489134}, {"address": "279 Macalister Boulevard", "lat": 43.529656557592666, "lon": -80.20003543490377}, {"address": "281 Macalister Boulevard", "lat": 43.52977911384394, "lon": -80.20010852825652}, {"address": "283 Macalister Boulevard", "lat": 43.52989655071569, "lon": -80.200193143077}, {"address": "1 Dudley Drive", "lat": 43.52911756324409, "lon": -80.20214578100797}, {"address": "17 Kirvan Drive", "lat": 43.52888388521, "lon": -80.20262308745457}, {"address": "19 Kirvan Drive", "lat": 43.528806385831864, "lon": -80.20251488425806}, {"address": "21 Kirvan Drive", "lat": 43.52872253325714, "lon": -80.2023948464463}, {"address": "23 Kirvan Drive", "lat": 43.52862166153322, "lon": -80.20225697656463}, {"address": "79 Mccann Street", "lat": 43.52828772288876, "lon": -80.20243128272932}, {"address": "83 Mccann Street", "lat": 43.528392136909794, "lon": -80.20257706272785}, {"address": "87 Mccann Street", "lat": 43.52848159480205, "lon": -80.20270890526963}, {"address": "91 Mccann Street", "lat": 43.528576064664264, "lon": -80.20284080222973}, {"address": "95 Mccann Street", "lat": 43.52868556894477, "lon": -80.20297286298042}, {"address": "99 Mccann Street", "lat": 43.52876496461018, "lon": -80.20311148597666}, {"address": "103 Mccann Street", "lat": 43.52886440589761, "lon": -80.20325032685903}, {"address": "107 Mccann Street", "lat": 43.528963767412435, "lon": -80.20340294296267}, {"address": "111 Mccann Street", "lat": 43.52905819712996, "lon": -80.2035417306823}, {"address": "115 Mccann Street", "lat": 43.52916004509345, "lon": -80.20369781973443}, {"address": "112 Mccann Street", "lat": 43.52877703520688, "lon": -80.20406563357392}, {"address": "108 Mccann Street", "lat": 43.52868761824847, "lon": -80.20392690102152}, {"address": "104 Mccann Street", "lat": 43.52859311024882, "lon": -80.20380188944175}, {"address": "100 Mccann Street", "lat": 43.528498759582156, "lon": -80.2036493277201}, {"address": "96 Mccann Street", "lat": 43.52841431398391, "lon": -80.20351753783171}, {"address": "92 Mccann Street", "lat": 43.5282726898771, "lon": -80.20330591500391}, {"address": "88 Mccann Street", "lat": 43.52816070003552, "lon": -80.20317038385849}, {"address": "84 Mccann Street", "lat": 43.528081304443326, "lon": -80.20303176215627}, {"address": "80 Mccann Street", "lat": 43.52797187977563, "lon": -80.20288592806156}, {"address": "76 Mccann Street", "lat": 43.527882618638664, "lon": -80.20271964761292}, {"address": "72 Mccann Street", "lat": 43.527866399614446, "lon": -80.20248872068854}, {"address": "68 Mccann Street", "lat": 43.52790025576291, "lon": -80.20226522351051}, {"address": "64 Mccann Street", "lat": 43.52799642063591, "lon": -80.20210094744283}, {"address": "60 Mccann Street", "lat": 43.52808741609829, "lon": -80.20196416848151}, {"address": "56 Mccann Street", "lat": 43.52819091981335, "lon": -80.2018309676444}, {"address": "52 Mccann Street", "lat": 43.52829955413103, "lon": -80.20167715713416}, {"address": "53 Kirvan Drive", "lat": 43.52813158652117, "lon": -80.2014704220498}, {"address": "54 Kirvan Drive", "lat": 43.528359033270355, "lon": -80.2011353568385}, {"address": "273 Macalister Boulevard", "lat": 43.52928924280045, "lon": -80.19983357892144}, {"address": "237 Macalister Boulevard", "lat": 43.52861842768419, "lon": -80.19912196094273}, {"address": "241 Macalister Boulevard", "lat": 43.52868836291834, "lon": -80.19922460527918}, {"address": "245 Macalister Boulevard", "lat": 43.52875480960441, "lon": -80.19930484603346}, {"address": "249 Macalister Boulevard", "lat": 43.52882389042547, "lon": -80.19939878249092}, {"address": "253 Macalister Boulevard", "lat": 43.52889665812169, "lon": -80.19948033470763}, {"address": "257 Macalister Boulevard", "lat": 43.528969369287275, "lon": -80.19957182647673}, {"address": "261 Macalister Boulevard", "lat": 43.52904850123578, "lon": -80.19964723350529}, {"address": "265 Macalister Boulevard", "lat": 43.529134907325734, "lon": -80.19971526413627}, {"address": "269 Macalister Boulevard", "lat": 43.52922851785813, "lon": -80.1997883429086}, {"address": "3 Ambrous Crescent", "lat": 43.528802484943014, "lon": -80.19992400123418}, {"address": "5 Ambrous Crescent", "lat": 43.52874452002988, "lon": -80.200009012048}, {"address": "9 Ambrous Crescent", "lat": 43.528699211537834, "lon": -80.20006534780107}, {"address": "11 Ambrous Crescent", "lat": 43.52865709274942, "lon": -80.20012522147455}, {"address": "15 Ambrous Crescent", "lat": 43.52861395818375, "lon": -80.20018392665203}, {"address": "17 Ambrous Crescent", "lat": 43.528567276929536, "lon": -80.20024431956377}, {"address": "21 Ambrous Crescent", "lat": 43.528524048790295, "lon": -80.20030072648939}, {"address": "23 Ambrous Crescent", "lat": 43.52847659279284, "lon": -80.20036493606952}, {"address": "27 Ambrous Crescent", "lat": 43.52843724132555, "lon": -80.20041805549708}, {"address": "29 Ambrous Crescent", "lat": 43.52839433891291, "lon": -80.20047830532025}, {"address": "33 Ambrous Crescent", "lat": 43.52834744306385, "lon": -80.20054048140643}, {"address": "35 Ambrous Crescent", "lat": 43.52830663004555, "lon": -80.20059616424412}, {"address": "39 Ambrous Crescent", "lat": 43.52825966189496, "lon": -80.20065844010409}, {"address": "41 Ambrous Crescent", "lat": 43.52821581583878, "lon": -80.20071741997344}, {"address": "45 Ambrous Crescent", "lat": 43.52817171396389, "lon": -80.20077420035902}, {"address": "47 Ambrous Crescent", "lat": 43.528107535245226, "lon": -80.20085376353312}, {"address": "63 Ambrous Crescent", "lat": 43.52792647432966, "lon": -80.20117630272124}, {"address": "67 Ambrous Crescent", "lat": 43.527848124279245, "lon": -80.20127220286655}, {"address": "71 Ambrous Crescent", "lat": 43.52777350711485, "lon": -80.20136305027098}, {"address": "75 Ambrous Crescent", "lat": 43.5277063000033, "lon": -80.20145397789105}, {"address": "79 Ambrous Crescent", "lat": 43.52764836808754, "lon": -80.20154246016122}, {"address": "83 Ambrous Crescent", "lat": 43.527566371658914, "lon": -80.20162813621398}, {"address": "87 Ambrous Crescent", "lat": 43.52749834027637, "lon": -80.20171607315682}, {"address": "91 Ambrous Crescent", "lat": 43.52742985827315, "lon": -80.20179351442373}, {"address": "95 Ambrous Crescent", "lat": 43.52736075319397, "lon": -80.20188244523597}, {"address": "99 Ambrous Crescent", "lat": 43.527277219442276, "lon": -80.20195895598681}, {"address": "103 Ambrous Crescent", "lat": 43.52720984475273, "lon": -80.20203794010077}, {"address": "107 Ambrous Crescent", "lat": 43.52713348508374, "lon": -80.20212755869277}, {"address": "111 Ambrous Crescent", "lat": 43.5270716514554, "lon": -80.20221273481948}, {"address": "115 Ambrous Crescent", "lat": 43.52699538008473, "lon": -80.2022870242632}, {"address": "119 Ambrous Crescent", "lat": 43.526913970775894, "lon": -80.20238195200018}, {"address": "29 Kirvan Drive", "lat": 43.52851659246471, "lon": -80.20210435305002}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 197;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

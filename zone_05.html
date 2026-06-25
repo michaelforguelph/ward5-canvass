@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 05 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 05</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 326</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "05";
+const ZONE_NAME = "Zone 05";
+const ZONE_POLYGON = [[43.520845, -80.24411], [43.518726, -80.246874], [43.516018, -80.242696], [43.516481, -80.241671], [43.519605, -80.242171], [43.520845, -80.24411]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.518465378136376, -80.24382589541798];     // [lat, lon]
+const ADDRESSES = [{"address": "74 Janefield Avenue 88", "lat": 43.5201298163759, "lon": -80.24467140729662}, {"address": "74 Janefield Avenue 174", "lat": 43.518388088699105, "lon": -80.24568369508506}, {"address": "264 College Avenue West 28", "lat": 43.52026361531111, "lon": -80.24367066050209}, {"address": "74 Janefield Avenue 148", "lat": 43.518698043961585, "lon": -80.24517806016034}, {"address": "176 Janefield Avenue 286", "lat": 43.51850324114128, "lon": -80.24317678653588}, {"address": "224 Janefield Avenue 344", "lat": 43.51763547690943, "lon": -80.24376950401941}, {"address": "224 Janefield Avenue 384", "lat": 43.5175201379724, "lon": -80.24274182856519}, {"address": "264 College Avenue West 29", "lat": 43.520236607393514, "lon": -80.24362932260144}, {"address": "224 Janefield Avenue 354", "lat": 43.5176784868767, "lon": -80.2438376271446}, {"address": "224 Janefield Avenue 396", "lat": 43.517720911317454, "lon": -80.24305044700864}, {"address": "176 Janefield Avenue 206", "lat": 43.51832453397572, "lon": -80.24471229219907}, {"address": "74 Janefield Avenue 118", "lat": 43.519341645108284, "lon": -80.24431623112064}, {"address": "224 Janefield Avenue 414", "lat": 43.51723656149554, "lon": -80.24319605352832}, {"address": "176 Janefield Avenue 322", "lat": 43.51774442484283, "lon": -80.24441919062642}, {"address": "74 Janefield Avenue 106", "lat": 43.51967274207635, "lon": -80.24414101889174}, {"address": "176 Janefield Avenue 298", "lat": 43.518255520206395, "lon": -80.2436851344831}, {"address": "74 Janefield Avenue 176", "lat": 43.51836232671487, "lon": -80.24563565929503}, {"address": "74 Janefield Avenue 2", "lat": 43.51892776778097, "lon": -80.24643383795234}, {"address": "224 Janefield Avenue 342", "lat": 43.5172917833002, "lon": -80.24411164791638}, {"address": "224 Janefield Avenue 434", "lat": 43.51687246027136, "lon": -80.24356183058713}, {"address": "224 Janefield Avenue 398", "lat": 43.51769301193254, "lon": -80.24311576645708}, {"address": "176 Janefield Avenue 190", "lat": 43.517801137777404, "lon": -80.24485146851886}, {"address": "224 Janefield Avenue 400", "lat": 43.517670925850936, "lon": -80.24317717260392}, {"address": "176 Janefield Avenue 204", "lat": 43.51841116385781, "lon": -80.2449857929553}, {"address": "176 Janefield Avenue 328", "lat": 43.51763936429794, "lon": -80.24455721584341}, {"address": "176 Janefield Avenue 216", "lat": 43.518148019225784, "lon": -80.24446162616945}, {"address": "176 Janefield Avenue 264", "lat": 43.51883734403011, "lon": -80.24345909676819}, {"address": "224 Janefield Avenue 422", "lat": 43.517097312808346, "lon": -80.24300549450838}, {"address": "74 Janefield Avenue 150", "lat": 43.51866809753938, "lon": -80.2451041187546}, {"address": "74 Janefield Avenue 22", "lat": 43.51919900080532, "lon": -80.24610677621399}, {"address": "176 Janefield Avenue 182", "lat": 43.517941745952676, "lon": -80.24505597260608}, {"address": "176 Janefield Avenue 224", "lat": 43.5184447670258, "lon": -80.24422237167936}, {"address": "74 Janefield Avenue 124", "lat": 43.51913838455351, "lon": -80.24465403012812}, {"address": "224 Janefield Avenue 380", "lat": 43.51742633508172, "lon": -80.24269500327513}, {"address": "74 Janefield Avenue 136", "lat": 43.518975382979995, "lon": -80.24503605050934}, {"address": "74 Janefield Avenue 38", "lat": 43.519277519928224, "lon": -80.24557460018528}, {"address": "224 Janefield Avenue 386", "lat": 43.517567865728566, "lon": -80.24274834242571}, {"address": "176 Janefield Avenue 194", "lat": 43.51817486560547, "lon": -80.24528143276575}, {"address": "176 Janefield Avenue 306", "lat": 43.518117635958845, "lon": -80.24350851096821}, {"address": "74 Janefield Avenue 36", "lat": 43.51901781669868, "lon": -80.24567305098078}, {"address": "176 Janefield Avenue 254", "lat": 43.5187269847968, "lon": -80.24375420358744}, {"address": "176 Janefield Avenue 234", "lat": 43.518489260912744, "lon": -80.24428454580946}, {"address": "176 Janefield Avenue 262", "lat": 43.518805161605236, "lon": -80.24351442120896}, {"address": "74 Janefield Avenue 84", "lat": 43.52006554874307, "lon": -80.24476614616125}, {"address": "74 Janefield Avenue 144", "lat": 43.518762606876386, "lon": -80.24527229158085}, {"address": "176 Janefield Avenue 252", "lat": 43.51871779226721, "lon": -80.24383763965974}, {"address": "74 Janefield Avenue 128", "lat": 43.519098346746475, "lon": -80.24481070784206}, {"address": "74 Janefield Avenue 126", "lat": 43.51911615188097, "lon": -80.24473930463938}, {"address": "224 Janefield Avenue 412", "lat": 43.51727971726731, "lon": -80.24324030784327}, {"address": "224 Janefield Avenue 378", "lat": 43.51738901741361, "lon": -80.24264286023171}, {"address": "74 Janefield Avenue 162", "lat": 43.51822361650004, "lon": -80.24535757927292}, {"address": "176 Janefield Avenue 276", "lat": 43.51936126732467, "lon": -80.24394648208138}, {"address": "224 Janefield Avenue 440", "lat": 43.517089214218046, "lon": -80.24386068839681}, {"address": "74 Janefield Avenue 110", "lat": 43.51958499618031, "lon": -80.2440504992096}, {"address": "74 Janefield Avenue 16", "lat": 43.51909230786668, "lon": -80.2462746195501}, {"address": "176 Janefield Avenue 230", "lat": 43.51858398368495, "lon": -80.24418021320743}, {"address": "224 Janefield Avenue 338", "lat": 43.517360531511876, "lon": -80.24423178098463}, {"address": "74 Janefield Avenue 154", "lat": 43.51841187144675, "lon": -80.24510713510462}, {"address": "74 Janefield Avenue 104", "lat": 43.5197203973754, "lon": -80.24415946913537}, {"address": "74 Janefield Avenue 112", "lat": 43.51954179247822, "lon": -80.24401419810394}, {"address": "224 Janefield Avenue 416", "lat": 43.51720350099776, "lon": -80.2431578818184}, {"address": "224 Janefield Avenue 346", "lat": 43.5176865596332, "lon": -80.24370047422885}, {"address": "74 Janefield Avenue 12", "lat": 43.51875558684478, "lon": -80.24618520401948}, {"address": "74 Janefield Avenue 158", "lat": 43.51831269599894, "lon": -80.24522931527082}, {"address": "224 Janefield Avenue 348", "lat": 43.51773469901397, "lon": -80.2436393664128}, {"address": "224 Janefield Avenue 352", "lat": 43.51772227210261, "lon": -80.24377845823591}, {"address": "224 Janefield Avenue 336", "lat": 43.51739641344117, "lon": -80.24428191992595}, {"address": "74 Janefield Avenue 132", "lat": 43.5190455617824, "lon": -80.24492148969816}, {"address": "176 Janefield Avenue 258", "lat": 43.518756756237536, "lon": -80.2436192877452}, {"address": "176 Janefield Avenue 304", "lat": 43.51815643648434, "lon": -80.2435547049755}, {"address": "224 Janefield Avenue 406", "lat": 43.517456984512975, "lon": -80.24336765336312}, {"address": "264 College Avenue West 32", "lat": 43.52001777159829, "lon": -80.24332712799476}, {"address": "176 Janefield Avenue 290", "lat": 43.518485025541494, "lon": -80.24331581274625}, {"address": "74 Janefield Avenue 164", "lat": 43.51817255695098, "lon": -80.2454226312797}, {"address": "224 Janefield Avenue 366", "lat": 43.51804853243901, "lon": -80.24297066888957}, {"address": "176 Janefield Avenue 268", "lat": 43.51909444796765, "lon": -80.24354957113833}, {"address": "176 Janefield Avenue 274", "lat": 43.51923432530771, "lon": -80.24363671105822}, {"address": "264 College Avenue West 41", "lat": 43.51958395926345, "lon": -80.2427281400934}, {"address": "176 Janefield Avenue 270", "lat": 43.51913770093174, "lon": -80.24357791623531}, {"address": "176 Janefield Avenue 202", "lat": 43.51836591883977, "lon": -80.24504693359339}, {"address": "176 Janefield Avenue 292", "lat": 43.51846726949368, "lon": -80.24337926029635}, {"address": "74 Janefield Avenue 86", "lat": 43.52008761150495, "lon": -80.24470871528531}, {"address": "176 Janefield Avenue 318", "lat": 43.51783785230242, "lon": -80.24405228763581}, {"address": "74 Janefield Avenue 66", "lat": 43.51962943257599, "lon": -80.24483472393435}, {"address": "224 Janefield Avenue 446", "lat": 43.516990275372855, "lon": -80.24370639573118}, {"address": "224 Janefield Avenue 376", "lat": 43.518282212054416, "lon": -80.24310463119538}, {"address": "176 Janefield Avenue 184", "lat": 43.517900001730304, "lon": -80.2450176998485}, {"address": "176 Janefield Avenue 242", "lat": 43.51894189130929, "lon": -80.24411868984068}, {"address": "176 Janefield Avenue 302", "lat": 43.51819236782529, "lon": -80.24359688887685}, {"address": "74 Janefield Avenue 122", "lat": 43.519296060775616, "lon": -80.24443306364776}, {"address": "224 Janefield Avenue 438", "lat": 43.517133828888156, "lon": -80.24390297118245}, {"address": "74 Janefield Avenue 50", "lat": 43.51946969362114, "lon": -80.24539381626168}, {"address": "224 Janefield Avenue 332", "lat": 43.517475451586634, "lon": -80.24437631418732}, {"address": "224 Janefield Avenue 404", "lat": 43.51749490795212, "lon": -80.2433203527388}, {"address": "176 Janefield Avenue 278", "lat": 43.51938050694285, "lon": -80.24387708344332}, {"address": "74 Janefield Avenue 90", "lat": 43.52015769249316, "lon": -80.2446100655311}, {"address": "176 Janefield Avenue 316", "lat": 43.51788521723808, "lon": -80.24411847240684}, {"address": "176 Janefield Avenue 210", "lat": 43.51825123797708, "lon": -80.24462591781442}, {"address": "224 Janefield Avenue 390", "lat": 43.51776401129413, "lon": -80.24286595969564}, {"address": "74 Janefield Avenue 6", "lat": 43.51887344705918, "lon": -80.24632182215656}, {"address": "176 Janefield Avenue 288", "lat": 43.51850129742936, "lon": -80.24325831664552}, {"address": "264 College Avenue West 31", "lat": 43.520048576085486, "lon": -80.24338456309799}, {"address": "224 Janefield Avenue 388", "lat": 43.51778332341935, "lon": -80.24278463033555}, {"address": "74 Janefield Avenue 98", "lat": 43.51987246462175, "lon": -80.24438400004034}, {"address": "74 Janefield Avenue 72", "lat": 43.51981922847394, "lon": -80.24504377801694}, {"address": "176 Janefield Avenue 250", "lat": 43.51911049736768, "lon": -80.24424196482138}, {"address": "74 Janefield Avenue 92", "lat": 43.51999762545643, "lon": -80.24451075596089}, {"address": "176 Janefield Avenue 300", "lat": 43.51822537905672, "lon": -80.24364301673593}, {"address": "176 Janefield Avenue 272", "lat": 43.519183799850374, "lon": -80.2436142499132}, {"address": "176 Janefield Avenue 188", "lat": 43.51784137458652, "lon": -80.24489966946682}, {"address": "176 Janefield Avenue 310", "lat": 43.517924672502865, "lon": -80.24405726527084}, {"address": "224 Janefield Avenue 424", "lat": 43.51704910870574, "lon": -80.24331523102099}, {"address": "74 Janefield Avenue 138", "lat": 43.518876113903936, "lon": -80.24541084541633}, {"address": "74 Janefield Avenue 60", "lat": 43.51949539459587, "lon": -80.24473969282374}, {"address": "74 Janefield Avenue 68", "lat": 43.51973140992175, "lon": -80.24496519064779}, {"address": "176 Janefield Avenue 256", "lat": 43.51874043505533, "lon": -80.24368474059136}, {"address": "74 Janefield Avenue 4", "lat": 43.518897676044624, "lon": -80.24638376299073}, {"address": "224 Janefield Avenue 430", "lat": 43.51694679815151, "lon": -80.24347715748296}, {"address": "74 Janefield Avenue 40", "lat": 43.5193191179997, "lon": -80.2456367417083}, {"address": "176 Janefield Avenue 296", "lat": 43.51828989499748, "lon": -80.24374520106205}, {"address": "224 Janefield Avenue 444", "lat": 43.517024723391984, "lon": -80.24375452776364}, {"address": "74 Janefield Avenue 166", "lat": 43.51855778951253, "lon": -80.24586466822731}, {"address": "176 Janefield Avenue 308", "lat": 43.517880202620034, "lon": -80.24399111488461}, {"address": "224 Janefield Avenue 334", "lat": 43.517438133777375, "lon": -80.24432417006639}, {"address": "176 Janefield Avenue 208", "lat": 43.51828862808369, "lon": -80.2446661292649}, {"address": "264 College Avenue West 37", "lat": 43.51971138677733, "lon": -80.24290619973756}, {"address": "74 Janefield Avenue 30", "lat": 43.51911101112917, "lon": -80.24581933016168}, {"address": "74 Janefield Avenue 78", "lat": 43.51994745278792, "lon": -80.24514272227022}, {"address": "176 Janefield Avenue 200", "lat": 43.518322132960144, "lon": -80.24510610222931}, {"address": "176 Janefield Avenue 244", "lat": 43.51897777328744, "lon": -80.24416883001079}, {"address": "176 Janefield Avenue 240", "lat": 43.51889875999713, "lon": -80.2440704553935}, {"address": "74 Janefield Avenue 82", "lat": 43.520057936298635, "lon": -80.24482772129352}, {"address": "74 Janefield Avenue 56", "lat": 43.51955616980128, "lon": -80.24521777997823}, {"address": "264 College Avenue West 42", "lat": 43.51955306707854, "lon": -80.24268497461472}, {"address": "176 Janefield Avenue 218", "lat": 43.51812084584593, "lon": -80.24440760774964}, {"address": "224 Janefield Avenue 382", "lat": 43.51747537751931, "lon": -80.24272341316829}, {"address": "74 Janefield Avenue 172", "lat": 43.518418204917744, "lon": -80.24572979100498}, {"address": "176 Janefield Avenue 248", "lat": 43.51906576128269, "lon": -80.24421956953076}, {"address": "176 Janefield Avenue 266", "lat": 43.51905552601866, "lon": -80.24352326553014}, {"address": "176 Janefield Avenue 198", "lat": 43.51826394591999, "lon": -80.24515316874583}, {"address": "176 Janefield Avenue 314", "lat": 43.51792681609323, "lon": -80.24418061150277}, {"address": "74 Janefield Avenue 26", "lat": 43.519283509144344, "lon": -80.24601625114546}, {"address": "74 Janefield Avenue 146", "lat": 43.51873103130077, "lon": -80.24522816755263}, {"address": "74 Janefield Avenue 62", "lat": 43.51953278466098, "lon": -80.2447799051607}, {"address": "264 College Avenue West 40", "lat": 43.519610967511944, "lon": -80.24276947838321}, {"address": "176 Janefield Avenue 222", "lat": 43.51839952152036, "lon": -80.24428351292777}, {"address": "74 Janefield Avenue 152", "lat": 43.51846439088164, "lon": -80.24504011064614}, {"address": "74 Janefield Avenue 94", "lat": 43.5199529859728, "lon": -80.2444724478999}, {"address": "176 Janefield Avenue 214", "lat": 43.518173757554834, "lon": -80.24451363830254}, {"address": "264 College Avenue West 26", "lat": 43.52032404596431, "lon": -80.2437658983414}, {"address": "224 Janefield Avenue 392", "lat": 43.517759294033894, "lon": -80.24292756581025}, {"address": "176 Janefield Avenue 212", "lat": 43.518205211795554, "lon": -80.24457765037639}, {"address": "176 Janefield Avenue 192", "lat": 43.518128137082286, "lon": -80.24534852309526}, {"address": "74 Janefield Avenue 102", "lat": 43.51976216600055, "lon": -80.2441937640708}, {"address": "176 Janefield Avenue 238", "lat": 43.518394416463224, "lon": -80.24440876697055}, {"address": "74 Janefield Avenue 80", "lat": 43.520032856745296, "lon": -80.24490500957619}, {"address": "176 Janefield Avenue 282", "lat": 43.51942604247486, "lon": -80.24376820577969}, {"address": "224 Janefield Avenue 394", "lat": 43.5177386431148, "lon": -80.24299097961367}, {"address": "74 Janefield Avenue 14", "lat": 43.51872257572856, "lon": -80.24613907437141}, {"address": "224 Janefield Avenue 374", "lat": 43.51823601661171, "lon": -80.2430842090023}, {"address": "224 Janefield Avenue 428", "lat": 43.51698039151009, "lon": -80.24342781670696}, {"address": "74 Janefield Avenue 64", "lat": 43.519578834901964, "lon": -80.24482419545028}, {"address": "224 Janefield Avenue 426", "lat": 43.517008315188505, "lon": -80.24335852123161}, {"address": "224 Janefield Avenue 420", "lat": 43.51713030019826, "lon": -80.24305560063965}, {"address": "176 Janefield Avenue 226", "lat": 43.51849280927923, "lon": -80.24417717661734}, {"address": "74 Janefield Avenue 140", "lat": 43.518840208299444, "lon": -80.24536468288518}, {"address": "176 Janefield Avenue 246", "lat": 43.519021049326305, "lon": -80.24419319719901}, {"address": "74 Janefield Avenue 114", "lat": 43.51940167878913, "lon": -80.24420354253591}, {"address": "176 Janefield Avenue 228", "lat": 43.51854092477419, "lon": -80.2441200453964}, {"address": "74 Janefield Avenue 32", "lat": 43.51907512986768, "lon": -80.24576918889413}, {"address": "176 Janefield Avenue 294", "lat": 43.51843647484176, "lon": -80.24344454605293}, {"address": "176 Janefield Avenue 312", "lat": 43.517970601502995, "lon": -80.24412144383166}, {"address": "224 Janefield Avenue 432", "lat": 43.51690607777798, "lon": -80.24350851298395}, {"address": "74 Janefield Avenue 44", "lat": 43.519407033717656, "lon": -80.2456994174109}, {"address": "176 Janefield Avenue 324", "lat": 43.517712146286215, "lon": -80.24449042520843}, {"address": "74 Janefield Avenue 168", "lat": 43.51850879621472, "lon": -80.24582829996544}, {"address": "264 College Avenue West 27", "lat": 43.52029579402692, "lon": -80.24371562611391}, {"address": "74 Janefield Avenue 34", "lat": 43.519049367926335, "lon": -80.2457211537634}, {"address": "264 College Avenue West 44", "lat": 43.51948742281817, "lon": -80.2425932477884}, {"address": "176 Janefield Avenue 196", "lat": 43.5182230300018, "lon": -80.24521634867523}, {"address": "224 Janefield Avenue 372", "lat": 43.518185635572216, "lon": -80.24303788161674}, {"address": "74 Janefield Avenue 54", "lat": 43.51951530309115, "lon": -80.24527300452658}, {"address": "74 Janefield Avenue 70", "lat": 43.51978181434003, "lon": -80.24500754245179}, {"address": "224 Janefield Avenue 410", "lat": 43.5173954683781, "lon": -80.24348629047948}, {"address": "224 Janefield Avenue 362", "lat": 43.51795860775115, "lon": -80.24323815926518}, {"address": "74 Janefield Avenue 120", "lat": 43.519315301599605, "lon": -80.24436366646124}, {"address": "224 Janefield Avenue 364", "lat": 43.51799949006429, "lon": -80.24294225853284}, {"address": "176 Janefield Avenue 180", "lat": 43.51797327327196, "lon": -80.24510805122145}, {"address": "264 College Avenue West 43", "lat": 43.51952346269405, "lon": -80.24264360824652}, {"address": "264 College Avenue West 39", "lat": 43.51964443348403, "lon": -80.24281624087892}, {"address": "224 Janefield Avenue 402", "lat": 43.51752852443712, "lon": -80.24326703446143}, {"address": "264 College Avenue West 30", "lat": 43.52020185394882, "lon": -80.2435807600922}, {"address": "224 Janefield Avenue 360", "lat": 43.51794374682054, "lon": -80.24330163939263}, {"address": "224 Janefield Avenue 358", "lat": 43.517936086053936, "lon": -80.2433711690271}, {"address": "74 Janefield Avenue 156", "lat": 43.518365167189906, "lon": -80.24517024756436}, {"address": "224 Janefield Avenue 356", "lat": 43.51792266008504, "lon": -80.24343665416332}, {"address": "74 Janefield Avenue 134", "lat": 43.51900321098765, "lon": -80.24498266423144}, {"address": "176 Janefield Avenue 326", "lat": 43.51768723770475, "lon": -80.24453986427052}, {"address": "264 College Avenue West 38", "lat": 43.51967406010312, "lon": -80.24285403988003}, {"address": "74 Janefield Avenue 74", "lat": 43.51985815097785, "lon": -80.24507008492125}, {"address": "224 Janefield Avenue 368", "lat": 43.51809613885439, "lon": -80.2429970730066}, {"address": "74 Janefield Avenue 42", "lat": 43.51936382962957, "lon": -80.24566311523748}, {"address": "74 Janefield Avenue 178", "lat": 43.51833084888895, "lon": -80.24557562476414}, {"address": "264 College Avenue West 33", "lat": 43.51998557132184, "lon": -80.24328573033736}, {"address": "74 Janefield Avenue 108", "lat": 43.51962810337833, "lon": -80.2441027125333}, {"address": "74 Janefield Avenue 76", "lat": 43.51990568444321, "lon": -80.245108426573}, {"address": "74 Janefield Avenue 142", "lat": 43.518795594166505, "lon": -80.24532239784077}, {"address": "176 Janefield Avenue 220", "lat": 43.51834695516336, "lon": -80.24435849324887}, {"address": "176 Janefield Avenue 186", "lat": 43.51786266095057, "lon": -80.24496953195276}, {"address": "74 Janefield Avenue 28", "lat": 43.5193170301212, "lon": -80.24597884484396}, {"address": "74 Janefield Avenue 20", "lat": 43.51916251211892, "lon": -80.24615608285096}, {"address": "176 Janefield Avenue 280", "lat": 43.51941410045503, "lon": -80.24382774212198}, {"address": "224 Janefield Avenue 418", "lat": 43.51717051276006, "lon": -80.24310777681922}, {"address": "176 Janefield Avenue 320", "lat": 43.517783832001264, "lon": -80.24436593905007}, {"address": "74 Janefield Avenue 10", "lat": 43.51880161235541, "lon": -80.24623347312189}, {"address": "224 Janefield Avenue 370", "lat": 43.51813802916649, "lon": -80.24301147742945}, {"address": "264 College Avenue West 25", "lat": 43.52035491541096, "lon": -80.24381263125865}, {"address": "264 College Avenue West 34", "lat": 43.51995465793734, "lon": -80.24324613182728}, {"address": "74 Janefield Avenue 24", "lat": 43.51924847968681, "lon": -80.24606358598761}, {"address": "264 College Avenue West 36", "lat": 43.519890278717085, "lon": -80.24315976919308}, {"address": "74 Janefield Avenue 130", "lat": 43.519076333127195, "lon": -80.24486018233472}, {"address": "224 Janefield Avenue 442", "lat": 43.51705763720247, "lon": -80.24381656633088}, {"address": "264 College Avenue West 35", "lat": 43.51992247903867, "lon": -80.24320116671842}, {"address": "176 Janefield Avenue 232", "lat": 43.518540198261704, "lon": -80.24423938267924}, {"address": "74 Janefield Avenue 96", "lat": 43.519906960631324, "lon": -80.24442417922944}, {"address": "224 Janefield Avenue 350", "lat": 43.51777335483037, "lon": -80.24370942835286}, {"address": "74 Janefield Avenue 170", "lat": 43.51845552209211, "lon": -80.2457819368368}, {"address": "176 Janefield Avenue 284", "lat": 43.519446742039285, "lon": -80.24369683625656}, {"address": "74 Janefield Avenue 46", "lat": 43.51945463951169, "lon": -80.24572582425989}, {"address": "224 Janefield Avenue 340", "lat": 43.5173304879792, "lon": -80.24417375324222}, {"address": "74 Janefield Avenue 18", "lat": 43.519130256688996, "lon": -80.24622333988252}, {"address": "74 Janefield Avenue 58", "lat": 43.5194580537013, "lon": -80.2446915238455}, {"address": "74 Janefield Avenue 8", "lat": 43.5188404368979, "lon": -80.24627569233314}, {"address": "224 Janefield Avenue 408", "lat": 43.517427649898075, "lon": -80.24343096609653}, {"address": "74 Janefield Avenue 52", "lat": 43.51948747495277, "lon": -80.24532639112776}, {"address": "224 Janefield Avenue 436", "lat": 43.517171171005025, "lon": -80.24395113659222}, {"address": "74 Janefield Avenue 160", "lat": 43.51826601584394, "lon": -80.2452884505085}, {"address": "74 Janefield Avenue 48", "lat": 43.51949353768429, "lon": -80.24575610979193}, {"address": "74 Janefield Avenue 116", "lat": 43.51936514267255, "lon": -80.24426080590536}, {"address": "176 Janefield Avenue 330", "lat": 43.51760139206321, "lon": -80.24461247224984}, {"address": "176 Janefield Avenue 260", "lat": 43.51877444010705, "lon": -80.24356777484346}, {"address": "74 Janefield Avenue 100", "lat": 43.51983497788362, "lon": -80.24435969871084}, {"address": "176 Janefield Avenue 236", "lat": 43.51843817784656, "lon": -80.2443535760367}, {"address": "456 Janefield Avenue", "lat": 43.517068975759415, "lon": -80.24251745028498}, {"address": "458 Janefield Avenue", "lat": 43.5164485455345, "lon": -80.24261357158971}, {"address": "460 Janefield Avenue", "lat": 43.51665272487143, "lon": -80.24224166747507}, {"address": "74 Janefield Avenue", "lat": 43.51922629079945, "lon": -80.24525405549392}, {"address": "454 Janefield Avenue", "lat": 43.516789629207956, "lon": -80.24289494560432}, {"address": "264 College Avenue West", "lat": 43.5206507286382, "lon": -80.24435889425604}, {"address": "454 Janefield Avenue 101", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 102", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 103", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 104", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 105", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 106", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 107", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 108", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "456 Janefield Avenue 109", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 110", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 111", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 112", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 113", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 114", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 115", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 116", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 117", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 118", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "458 Janefield Avenue 119", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 120", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 121", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 122", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 123", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 124", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 125", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 126", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "460 Janefield Avenue 127", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 128", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 129", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 130", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 131", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 132", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 133", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 134", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "454 Janefield Avenue 201", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 202", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 203", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 205", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 206", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 207", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "454 Janefield Avenue 208", "lat": 43.51680565097129, "lon": -80.24296288120628}, {"address": "456 Janefield Avenue 209", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 210", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 211", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 212", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 213", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 214", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 215", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 216", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 217", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "456 Janefield Avenue 218", "lat": 43.517084216520864, "lon": -80.24257306876297}, {"address": "458 Janefield Avenue 219", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 220", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 221", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 222", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 223", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 224", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 225", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "458 Janefield Avenue 226", "lat": 43.516473345081394, "lon": -80.24268916333578}, {"address": "460 Janefield Avenue 227", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 228", "lat": 43.51667298932762, "lon": -80.24230028985758}, {"address": "460 Janefield Avenue 229", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 230", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 231", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 232", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 233", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "460 Janefield Avenue 234", "lat": 43.51667298843546, "lon": -80.24230029110603}, {"address": "302 College Avenue West 47", "lat": 43.52045978599686, "lon": -80.24456752259931}, {"address": "302 College Avenue West 48", "lat": 43.520423017194624, "lon": -80.244516142313}, {"address": "302 College Avenue West 50", "lat": 43.52034295546182, "lon": -80.24441030932854}, {"address": "302 College Avenue West 51", "lat": 43.520284449626665, "lon": -80.24434668964365}, {"address": "302 College Avenue West 52", "lat": 43.52025644160099, "lon": -80.24428941566228}, {"address": "302 College Avenue West 53", "lat": 43.52021318462312, "lon": -80.24422896895872}, {"address": "302 College Avenue West 49", "lat": 43.520386212344725, "lon": -80.24447075629128}, {"address": "302 College Avenue West 54", "lat": 43.52017637966032, "lon": -80.24418358326868}, {"address": "176 Janefield Avenue", "lat": 43.518603037802436, "lon": -80.24396099082684}, {"address": "224 Janefield Avenue", "lat": 43.51745433772907, "lon": -80.24304450964932}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 326;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

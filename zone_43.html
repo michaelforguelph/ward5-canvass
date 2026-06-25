@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 43 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 43</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 127</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "43";
+const ZONE_NAME = "Zone 43";
+const ZONE_POLYGON = [[43.520136, -80.248736], [43.519344, -80.249871], [43.514985, -80.243387], [43.515784, -80.242477], [43.520136, -80.248736]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.51759660892843, -80.24617157389986];     // [lat, lon]
+const ADDRESSES = [{"address": "27 Janefield Avenue", "lat": 43.51941239896737, "lon": -80.24802258283536}, {"address": "35 Janefield Avenue", "lat": 43.51926383807832, "lon": -80.24778576244773}, {"address": "41 Janefield Avenue", "lat": 43.51911204932851, "lon": -80.24756723766214}, {"address": "49 Janefield Avenue", "lat": 43.51894182616467, "lon": -80.24736449879008}, {"address": "53 Janefield Avenue", "lat": 43.518800619370076, "lon": -80.24716417558672}, {"address": "57 Janefield Avenue", "lat": 43.51860265621558, "lon": -80.24705386891846}, {"address": "59 Janefield Avenue", "lat": 43.51857904402201, "lon": -80.24695373059025}, {"address": "61 Janefield Avenue", "lat": 43.518529062819646, "lon": -80.2468993806414}, {"address": "63 Janefield Avenue", "lat": 43.51846593002445, "lon": -80.24686280262779}, {"address": "65 Janefield Avenue", "lat": 43.51841225363736, "lon": -80.24680328848375}, {"address": "67 Janefield Avenue", "lat": 43.51830443172688, "lon": -80.24645635691107}, {"address": "69 Janefield Avenue", "lat": 43.51826121629415, "lon": -80.24651475271003}, {"address": "71 Janefield Avenue", "lat": 43.51821608928881, "lon": -80.24658080889917}, {"address": "73 Janefield Avenue", "lat": 43.518193166002966, "lon": -80.24667272693088}, {"address": "75 Janefield Avenue", "lat": 43.51814243490772, "lon": -80.24674127901012}, {"address": "77 Janefield Avenue", "lat": 43.51807701558704, "lon": -80.2467738112644}, {"address": "79 Janefield Avenue", "lat": 43.51803004086155, "lon": -80.24683728550794}, {"address": "81 Janefield Avenue", "lat": 43.5182356318694, "lon": -80.24704194827699}, {"address": "83 Janefield Avenue", "lat": 43.51828370142854, "lon": -80.24710395855053}, {"address": "85 Janefield Avenue", "lat": 43.51835237773587, "lon": -80.24714828265913}, {"address": "87 Janefield Avenue", "lat": 43.518398537454075, "lon": -80.24721795359099}, {"address": "89 Janefield Avenue", "lat": 43.518196829275425, "lon": -80.24759715830118}, {"address": "91 Janefield Avenue", "lat": 43.51817500195802, "lon": -80.24750984400865}, {"address": "93 Janefield Avenue", "lat": 43.51812508506408, "lon": -80.24744525194544}, {"address": "95 Janefield Avenue", "lat": 43.518063831116095, "lon": -80.2474061347993}, {"address": "97 Janefield Avenue", "lat": 43.51801200256213, "lon": -80.2473492021266}, {"address": "99 Janefield Avenue", "lat": 43.51787718754007, "lon": -80.24715047660624}, {"address": "101 Janefield Avenue", "lat": 43.51783462958268, "lon": -80.24710133294847}, {"address": "103 Janefield Avenue", "lat": 43.517805473840546, "lon": -80.24699344999952}, {"address": "105 Janefield Avenue", "lat": 43.51775182951626, "lon": -80.24692881478796}, {"address": "107 Janefield Avenue", "lat": 43.51768500069486, "lon": -80.24688707413544}, {"address": "109 Janefield Avenue", "lat": 43.51763884077719, "lon": -80.24681740427215}, {"address": "111 Janefield Avenue", "lat": 43.51760010310326, "lon": -80.24675294277088}, {"address": "113 Janefield Avenue", "lat": 43.51796844224587, "lon": -80.24654978401637}, {"address": "115 Janefield Avenue", "lat": 43.51792040257356, "lon": -80.2464826541599}, {"address": "117 Janefield Avenue", "lat": 43.51785539097813, "lon": -80.24644861452428}, {"address": "119 Janefield Avenue", "lat": 43.51780168330432, "lon": -80.24639422292785}, {"address": "121 Janefield Avenue", "lat": 43.51812257858592, "lon": -80.24633134917418}, {"address": "123 Janefield Avenue", "lat": 43.518082024119124, "lon": -80.246259183095}, {"address": "125 Janefield Avenue", "lat": 43.51801513201465, "lon": -80.24622768370482}, {"address": "127 Janefield Avenue", "lat": 43.517963335752405, "lon": -80.24616563171058}, {"address": "129 Janefield Avenue", "lat": 43.51776713822207, "lon": -80.24594827743154}, {"address": "131 Janefield Avenue", "lat": 43.51772201243144, "lon": -80.2460143322458}, {"address": "133 Janefield Avenue", "lat": 43.51769539443006, "lon": -80.24610108670296}, {"address": "135 Janefield Avenue", "lat": 43.51765211613843, "lon": -80.24616972407783}, {"address": "137 Janefield Avenue", "lat": 43.51758300181659, "lon": -80.24619709365015}, {"address": "139 Janefield Avenue", "lat": 43.51751229181526, "lon": -80.24648562575695}, {"address": "141 Janefield Avenue", "lat": 43.51745479575905, "lon": -80.24644143235645}, {"address": "143 Janefield Avenue", "lat": 43.51740487736698, "lon": -80.2463768419537}, {"address": "145 Janefield Avenue", "lat": 43.51737929181663, "lon": -80.24629460686117}, {"address": "147 Janefield Avenue", "lat": 43.51734052187652, "lon": -80.24623526629227}, {"address": "149 Janefield Avenue", "lat": 43.51729063443192, "lon": -80.24616555464019}, {"address": "151 Janefield Avenue", "lat": 43.517030835222165, "lon": -80.2459884382667}, {"address": "153 Janefield Avenue", "lat": 43.51707602401239, "lon": -80.24591214113659}, {"address": "155 Janefield Avenue", "lat": 43.51712105569051, "lon": -80.24586144907671}, {"address": "157 Janefield Avenue", "lat": 43.517186474759036, "lon": -80.2458289163682}, {"address": "159 Janefield Avenue", "lat": 43.517235295630186, "lon": -80.24576802497702}, {"address": "161 Janefield Avenue", "lat": 43.51726385501571, "lon": -80.24566849036817}, {"address": "163 Janefield Avenue", "lat": 43.5173108282056, "lon": -80.24560501728674}, {"address": "165 Janefield Avenue", "lat": 43.517658470131316, "lon": -80.24573961506852}, {"address": "167 Janefield Avenue", "lat": 43.517614157121194, "lon": -80.24567252885528}, {"address": "169 Janefield Avenue", "lat": 43.517558663556244, "lon": -80.24560531230642}, {"address": "171 Janefield Avenue", "lat": 43.51754062484379, "lon": -80.24550780165212}, {"address": "173 Janefield Avenue", "lat": 43.51749437009394, "lon": -80.24545349646672}, {"address": "175 Janefield Avenue", "lat": 43.51742566210103, "lon": -80.24541429521985}, {"address": "185 Janefield Avenue", "lat": 43.5166609592911, "lon": -80.2448636821748}, {"address": "195 Janefield Avenue", "lat": 43.51647030770153, "lon": -80.24459386396566}, {"address": "201 Janefield Avenue", "lat": 43.516528482925274, "lon": -80.24412162054819}, {"address": "205 Janefield Avenue", "lat": 43.51643053340879, "lon": -80.24398317220087}, {"address": "1 Mason Court", "lat": 43.51966988714972, "lon": -80.24830816055761}, {"address": "3 Mason Court", "lat": 43.51960709390671, "lon": -80.24837219050067}, {"address": "5 Mason Court", "lat": 43.519551983489954, "lon": -80.24844930260365}, {"address": "7 Mason Court", "lat": 43.519497199930306, "lon": -80.24852560128981}, {"address": "9 Mason Court", "lat": 43.51944302618482, "lon": -80.2485992022991}, {"address": "11 Mason Court", "lat": 43.519390909024374, "lon": -80.24868281616071}, {"address": "15 Mason Court", "lat": 43.519340964946224, "lon": -80.248754846209}, {"address": "17 Mason Court", "lat": 43.51928950845151, "lon": -80.24882679096562}, {"address": "19 Mason Court", "lat": 43.51923221780893, "lon": -80.24890321906383}, {"address": "21 Mason Court", "lat": 43.519177803747155, "lon": -80.24897961381058}, {"address": "23 Mason Court", "lat": 43.51912380340106, "lon": -80.24905169366684}, {"address": "25 Mason Court", "lat": 43.51906027121661, "lon": -80.24913818275245}, {"address": "14 Mason Court", "lat": 43.519124353306225, "lon": -80.24847883261457}, {"address": "16 Mason Court", "lat": 43.51907046801375, "lon": -80.24855151895349}, {"address": "18 Mason Court", "lat": 43.51901859651775, "lon": -80.24862195174384}, {"address": "20 Mason Court", "lat": 43.518952556710474, "lon": -80.24869154561297}, {"address": "22 Mason Court", "lat": 43.51880864960623, "lon": -80.24845156315479}, {"address": "24 Mason Court", "lat": 43.51875491235509, "lon": -80.24838321230214}, {"address": "26 Mason Court", "lat": 43.518701019706896, "lon": -80.24831917061604}, {"address": "28 Mason Court", "lat": 43.51864877158524, "lon": -80.24824724545331}, {"address": "30 Mason Court", "lat": 43.518592938004375, "lon": -80.24817314023419}, {"address": "32 Mason Court", "lat": 43.51854017349801, "lon": -80.24810581713758}, {"address": "34 Mason Court", "lat": 43.518489290557525, "lon": -80.24801969573751}, {"address": "36 Mason Court", "lat": 43.518484804224975, "lon": -80.24786699969587}, {"address": "38 Mason Court", "lat": 43.51845351133596, "lon": -80.24773964290243}, {"address": "40 Mason Court", "lat": 43.51838888704077, "lon": -80.24764986937114}, {"address": "354 College Avenue West", "lat": 43.5199134767993, "lon": -80.2487250360218}, {"address": "366 College Avenue West", "lat": 43.51978154242766, "lon": -80.24890718795172}, {"address": "368 College Avenue West", "lat": 43.519635218805725, "lon": -80.24909767285635}, {"address": "374 College Avenue West", "lat": 43.51948984980879, "lon": -80.24933239219826}, {"address": "376 College Avenue West", "lat": 43.51937193666397, "lon": -80.2495020488125}, {"address": "1 Torch Lane", "lat": 43.516280736432705, "lon": -80.24377923831021}, {"address": "11 Torch Lane", "lat": 43.515997650247854, "lon": -80.24427734979143}, {"address": "8 Torch Lane", "lat": 43.51555681785236, "lon": -80.24364220697525}, {"address": "181 Janefield Avenue", "lat": 43.51713794137959, "lon": -80.24492447688176}, {"address": "6 Mason Court", "lat": 43.519326356989986, "lon": -80.2481856135826}, {"address": "6 Mason Court B", "lat": 43.51929737705329, "lon": -80.2481533251378}, {"address": "8 Mason Court", "lat": 43.519279178122176, "lon": -80.2482569130119}, {"address": "8 Mason Court B", "lat": 43.51925019820532, "lon": -80.24822462455755}, {"address": "35 Janefield Avenue B", "lat": 43.519228918158575, "lon": -80.24783726717564}, {"address": "27 Janefield Avenue B", "lat": 43.51938262777162, "lon": -80.24798759572347}, {"address": "10 Mason Court B", "lat": 43.519198255562245, "lon": -80.24829598300914}, {"address": "10 Mason Court", "lat": 43.519227235459255, "lon": -80.24832827147057}, {"address": "12 Mason Court B", "lat": 43.51915348907458, "lon": -80.24837183532661}, {"address": "12 Mason Court", "lat": 43.519182468950476, "lon": -80.24840412380105}, {"address": "35 Janefield Avenue C", "lat": 43.51912217439307, "lon": -80.24798024650394}, {"address": "33 Janefield Avenue", "lat": 43.51931550761403, "lon": -80.24785387052262}, {"address": "33 Janefield Avenue B", "lat": 43.519280587663985, "lon": -80.24790537525602}, {"address": "33 Janefield Avenue C", "lat": 43.51917384381425, "lon": -80.24804835458872}, {"address": "37 Janefield Avenue", "lat": 43.519215720457176, "lon": -80.2477143376134}, {"address": "10 Mason Court C", "lat": 43.51907562339035, "lon": -80.2481239960562}, {"address": "12 Mason Court C", "lat": 43.51902725123877, "lon": -80.24819498216017}, {"address": "37 Janefield Avenue B", "lat": 43.51907781580254, "lon": -80.247900691515}, {"address": "39 Janefield Avenue", "lat": 43.51916247082508, "lon": -80.24764133843594}, {"address": "39 Janefield Avenue B", "lat": 43.519024553370905, "lon": -80.24782572885715}, {"address": "43 Janefield Avenue", "lat": 43.5190662030321, "lon": -80.24749357755515}, {"address": "43 Janefield Avenue B", "lat": 43.51892340064026, "lon": -80.24768311041166}, {"address": "41 Janefield Avenue B", "lat": 43.51897208604318, "lon": -80.24775378914106}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 127;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

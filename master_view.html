@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ward 5 Canvass — Master View</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  .panel {
+    position: fixed; top: 12px; left: 12px; z-index: 999;
+    background: white; border-radius: 8px; padding: 12px 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15); max-width: 280px;
+    font-size: 13px;
+  }
+  .panel h2 { margin: 0 0 8px 0; font-size: 15px; }
+  .panel .stats { color: #555; margin-bottom: 8px; }
+
+  .filter-group { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .filter-btn {
+    text-align: left; padding: 6px 10px; border: 1px solid #ccc; background: white;
+    border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between;
+  }
+  .filter-btn.active { background: #1a73e8; color: white; border-color: #1a73e8; }
+  .filter-btn .count { font-size: 11px; opacity: 0.7; margin-left: 8px; }
+
+  .legend-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+  #refresh {
+    margin-top: 10px; width: 100%; padding: 8px; border: 0;
+    background: #1a73e8; color: white; border-radius: 4px; font-size: 13px; cursor: pointer;
+  }
+  #lastUpdate { font-size: 11px; color: #888; margin-top: 4px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+  <h2>Ward 5 Canvass — Master View</h2>
+  <div class="stats" id="stats">Loading…</div>
+
+  <div class="filter-group">
+    <div class="filter-btn active" data-filter="all">All entries <span class="count" id="c-all">0</span></div>
+    <div class="filter-btn" data-filter="No Answer"><span><span class="dot" style="background:#4a90e2"></span> No Answer</span><span class="count" id="c-na">0</span></div>
+    <div class="filter-btn" data-filter="Supporter"><span><span class="dot" style="background:#27ae60"></span> Supporter</span><span class="count" id="c-sup">0</span></div>
+    <div class="filter-btn" data-filter="Not Supporter"><span><span class="dot" style="background:#e74c3c"></span> Not Supporter</span><span class="count" id="c-not">0</span></div>
+    <div class="filter-btn" data-filter="Undecided"><span><span class="dot" style="background:#f1c40f"></span> Undecided</span><span class="count" id="c-und">0</span></div>
+    <div class="filter-btn" data-filter="lawn">Lawn sign requests <span class="count" id="c-lawn">0</span></div>
+    <div class="filter-btn" data-filter="fu">Follow-up needed <span class="count" id="c-fu">0</span></div>
+    <div class="filter-btn" data-filter="family">Families <span class="count" id="c-family">0</span></div>
+  </div>
+
+  <button id="refresh" onclick="refresh()">↻ Refresh from Sheet</button>
+  <div id="lastUpdate">—</div>
+</div>
+
+<script>
+const ZONES = [{"num": 1, "name": "Zone 01", "polygon_lonlat": [[-80.255139, 43.527997], [-80.24954, 43.530901], [-80.2524, 43.53311], [-80.257689, 43.529504], [-80.255139, 43.527997]]}, {"num": 2, "name": "Zone 02", "polygon_lonlat": [[-80.258886, 43.527525], [-80.25425, 43.524206], [-80.251325, 43.525797], [-80.253548, 43.528214], [-80.258886, 43.527525]]}, {"num": 3, "name": "Zone 03", "polygon_lonlat": [[-80.247139, 43.529219], [-80.249347, 43.527564], [-80.244044, 43.523866], [-80.2418, 43.525547], [-80.247139, 43.529219]]}, {"num": 4, "name": "Zone 04 (apartment towers)", "polygon_lonlat": [[-80.248252, 43.526156], [-80.25012, 43.52479], [-80.246255, 43.522361], [-80.24421, 43.523844], [-80.247543, 43.526203], [-80.248252, 43.526156]]}, {"num": 5, "name": "Zone 05", "polygon_lonlat": [[-80.24411, 43.520845], [-80.246874, 43.518726], [-80.242696, 43.516018], [-80.241671, 43.516481], [-80.242171, 43.519605], [-80.24411, 43.520845]]}, {"num": 6, "name": "Zone 06", "polygon_lonlat": [[-80.250707, 43.518632], [-80.25308, 43.517113], [-80.25212, 43.516271], [-80.251792, 43.514916], [-80.250378, 43.514403], [-80.247955, 43.512883], [-80.245278, 43.514971], [-80.250707, 43.518632]]}, {"num": 7, "name": "Zone 07", "polygon_lonlat": [[-80.252926, 43.511664], [-80.249758, 43.513953], [-80.251209, 43.51463], [-80.251892, 43.515186], [-80.252157, 43.516208], [-80.253035, 43.517067], [-80.256487, 43.51442], [-80.255896, 43.513049], [-80.25344, 43.512049], [-80.252926, 43.511664]]}, {"num": 8, "name": "Zone 8", "polygon_lonlat": [[-80.256512, 43.514601], [-80.25819, 43.513782], [-80.255878, 43.510243], [-80.252523, 43.508455], [-80.249082, 43.509188], [-80.250041, 43.510367], [-80.25278, 43.51151], [-80.254389, 43.512379], [-80.255776, 43.512975], [-80.256443, 43.513993], [-80.256512, 43.514601]]}, {"num": 9, "name": "Zone 09", "polygon_lonlat": [[-80.238007, 43.522781], [-80.241961, 43.519904], [-80.242268, 43.519653], [-80.240975, 43.517779], [-80.236042, 43.521434], [-80.238007, 43.522781]]}, {"num": 10, "name": "Zone 10", "polygon_lonlat": [[-80.252346, 43.53345], [-80.247164, 43.529281], [-80.243527, 43.531948], [-80.248018, 43.535366], [-80.252346, 43.53345]]}, {"num": 11, "name": "Zone 11", "polygon_lonlat": [[-80.247075, 43.52934], [-80.241623, 43.525464], [-80.237498, 43.528562], [-80.239603, 43.530103], [-80.23935, 43.530515], [-80.242423, 43.532759], [-80.247075, 43.52934]]}, {"num": 12, "name": "Zone 12", "polygon_lonlat": [[-80.247983, 43.535612], [-80.24813, 43.53552], [-80.243373, 43.531965], [-80.240595, 43.533903], [-80.241121, 43.534346], [-80.238469, 43.536192], [-80.241584, 43.538435], [-80.247983, 43.535612]]}, {"num": 13, "name": "Zone 13", "polygon_lonlat": [[-80.238435, 43.536133], [-80.24113, 43.534267], [-80.240659, 43.533843], [-80.242349, 43.532597], [-80.239274, 43.530454], [-80.239684, 43.530023], [-80.237426, 43.528556], [-80.232593, 43.532187], [-80.238435, 43.536133]]}, {"num": 14, "name": "Zone 14", "polygon_lonlat": [[-80.241247, 43.53846], [-80.241365, 43.53846], [-80.234555, 43.533555], [-80.230393, 43.536562], [-80.23432, 43.53927], [-80.239159, 43.539292], [-80.241247, 43.53846]]}, {"num": 15, "name": "Zone 15 (Chancellors way + West Res)", "polygon_lonlat": [[-80.236559, 43.527314], [-80.237565, 43.526798], [-80.237513, 43.522847], [-80.236125, 43.521765], [-80.234112, 43.522621], [-80.233973, 43.525577], [-80.236559, 43.527314]]}, {"num": 16, "name": "Zone 16 (East Residences)", "polygon_lonlat": [[-80.222896, 43.536631], [-80.224918, 43.535374], [-80.222971, 43.533915], [-80.220884, 43.535347], [-80.222896, 43.536631]]}, {"num": 17, "name": "Zone 17", "polygon_lonlat": [[-80.237398, 43.513959], [-80.240172, 43.512145], [-80.239167, 43.510307], [-80.234097, 43.506918], [-80.232057, 43.508337], [-80.234796, 43.510279], [-80.234905, 43.512185], [-80.234516, 43.512812], [-80.236293, 43.51335], [-80.237398, 43.513959]]}, {"num": 18, "name": "Zone 18", "polygon_lonlat": [[-80.23443, 43.512777], [-80.234856, 43.51215], [-80.234893, 43.510296], [-80.232008, 43.508284], [-80.229915, 43.509846], [-80.228296, 43.510491], [-80.230755, 43.511885], [-80.23443, 43.512777]]}, {"num": 19, "name": "Zone 19", "polygon_lonlat": [[-80.239436, 43.51555], [-80.237395, 43.514167], [-80.233821, 43.516397], [-80.23489, 43.516934], [-80.236985, 43.515647], [-80.238108, 43.516494], [-80.239436, 43.51555]]}, {"num": 20, "name": "Zone 20", "polygon_lonlat": [[-80.2373, 43.514085], [-80.236085, 43.513246], [-80.234488, 43.512959], [-80.230561, 43.5118], [-80.228214, 43.510528], [-80.227559, 43.510611], [-80.230518, 43.514373], [-80.231134, 43.515435], [-80.231837, 43.515264], [-80.233785, 43.5164], [-80.235777, 43.515189], [-80.2373, 43.514085]]}, {"num": 21, "name": "Zone 21", "polygon_lonlat": [[-80.232556, 43.518807], [-80.233259, 43.518075], [-80.230871, 43.51594], [-80.229568, 43.515111], [-80.229377, 43.514219], [-80.227561, 43.513805], [-80.225394, 43.515419], [-80.221483, 43.513815], [-80.220941, 43.513699], [-80.220839, 43.51407], [-80.22346, 43.515621], [-80.226111, 43.515982], [-80.227956, 43.516166], [-80.229656, 43.516704], [-80.232556, 43.518807]]}, {"num": 22, "name": "Zone 22", "polygon_lonlat": [[-80.2335, 43.520097], [-80.231809, 43.51877], [-80.229383, 43.520339], [-80.231115, 43.52166], [-80.2335, 43.520097]]}, {"num": 23, "name": "Zone 23", "polygon_lonlat": [[-80.231831, 43.518679], [-80.229714, 43.516826], [-80.227159, 43.518748], [-80.223554, 43.521279], [-80.226091, 43.522979], [-80.231831, 43.518679]]}, {"num": 24, "name": "Zone 24", "polygon_lonlat": [[-80.226076, 43.522981], [-80.22281, 43.520595], [-80.217627, 43.524385], [-80.220413, 43.525298], [-80.222141, 43.524183], [-80.223345, 43.524005], [-80.224136, 43.524515], [-80.226076, 43.522981]]}, {"num": 25, "name": "Zone 25", "polygon_lonlat": [[-80.229496, 43.516802], [-80.227886, 43.516164], [-80.224818, 43.515944], [-80.223318, 43.515774], [-80.222795, 43.516333], [-80.223813, 43.516752], [-80.223607, 43.517531], [-80.223332, 43.518508], [-80.222988, 43.519047], [-80.22197, 43.519825], [-80.221997, 43.519955], [-80.223634, 43.521152], [-80.227047, 43.518838], [-80.228766, 43.5176], [-80.229578, 43.516842], [-80.229496, 43.516802]]}, {"num": 26, "name": "Zone 26", "polygon_lonlat": [[-80.223243, 43.515633], [-80.220604, 43.514012], [-80.216828, 43.51682], [-80.218697, 43.517743], [-80.220103, 43.518441], [-80.2207, 43.519209], [-80.221837, 43.51988], [-80.223359, 43.51879], [-80.223783, 43.516737], [-80.222723, 43.516345], [-80.223417, 43.515703], [-80.223243, 43.515633]]}, {"num": 27, "name": "Zone 27", "polygon_lonlat": [[-80.222729, 43.520547], [-80.220698, 43.519141], [-80.220203, 43.518833], [-80.21797, 43.520413], [-80.216395, 43.519357], [-80.216147, 43.519545], [-80.216115, 43.520249], [-80.217733, 43.521391], [-80.217819, 43.521547], [-80.215246, 43.523188], [-80.217533, 43.524401], [-80.222729, 43.520547]]}, {"num": 28, "name": "Zone 28", "polygon_lonlat": [[-80.220175, 43.518661], [-80.219362, 43.517975], [-80.216891, 43.516808], [-80.215033, 43.518156], [-80.214966, 43.520116], [-80.214137, 43.521055], [-80.212777, 43.522137], [-80.215232, 43.523322], [-80.217737, 43.521476], [-80.216036, 43.520185], [-80.216128, 43.519545], [-80.216405, 43.519296], [-80.217988, 43.520377], [-80.220282, 43.518742], [-80.220175, 43.518661]]}, {"num": 29, "name": "Zone 29", "polygon_lonlat": [[-80.219055, 43.530738], [-80.22454, 43.526848], [-80.221307, 43.525697], [-80.219451, 43.525229], [-80.216007, 43.52761], [-80.217341, 43.528433], [-80.217412, 43.529355], [-80.219055, 43.530738]]}, {"num": 30, "name": "Zone 30", "polygon_lonlat": [[-80.219346, 43.525116], [-80.219401, 43.525076], [-80.219424, 43.525152], [-80.212584, 43.522083], [-80.211379, 43.523457], [-80.210701, 43.524668], [-80.2137, 43.525911], [-80.215895, 43.527546], [-80.219346, 43.525116]]}, {"num": 31, "name": "Zone 31", "polygon_lonlat": [[-80.212479, 43.52212], [-80.209414, 43.520546], [-80.206545, 43.519012], [-80.205626, 43.519669], [-80.204389, 43.519313], [-80.203408, 43.519852], [-80.207129, 43.523267], [-80.209151, 43.523782], [-80.210661, 43.524603], [-80.211398, 43.523427], [-80.212479, 43.52212]]}, {"num": 32, "name": "Zone 32", "polygon_lonlat": [[-80.206571, 43.519018], [-80.199456, 43.51375], [-80.196819, 43.515705], [-80.200414, 43.518421], [-80.203126, 43.519594], [-80.204339, 43.519246], [-80.205612, 43.519605], [-80.206571, 43.519018]]}, {"num": 33, "name": "Zone 33", "polygon_lonlat": [[-80.21054, 43.524634], [-80.208773, 43.523656], [-80.20687, 43.523232], [-80.201598, 43.521245], [-80.200474, 43.522689], [-80.204024, 43.524351], [-80.208383, 43.526263], [-80.21054, 43.524634]]}, {"num": 34, "name": "Zone 34", "polygon_lonlat": [[-80.214268, 43.526351], [-80.213841, 43.526062], [-80.210451, 43.524756], [-80.208391, 43.526345], [-80.207435, 43.526089], [-80.205226, 43.527561], [-80.206808, 43.528748], [-80.207709, 43.529089], [-80.208519, 43.52937], [-80.209455, 43.529933], [-80.214268, 43.526351]]}, {"num": 35, "name": "Zone 35", "polygon_lonlat": [[-80.209335, 43.529969], [-80.208535, 43.529406], [-80.207771, 43.529204], [-80.206935, 43.528826], [-80.205153, 43.527605], [-80.204425, 43.528431], [-80.20468, 43.529125], [-80.20257, 43.531199], [-80.201552, 43.531305], [-80.201783, 43.531753], [-80.203395, 43.532166], [-80.205068, 43.533001], [-80.205274, 43.533001], [-80.207335, 43.531613], [-80.209335, 43.529969]]}, {"num": 36, "name": "Zone 36", "polygon_lonlat": [[-80.202475, 43.531124], [-80.204542, 43.529119], [-80.204263, 43.528289], [-80.202377, 43.526739], [-80.199668, 43.528785], [-80.199193, 43.528491], [-80.198732, 43.528674], [-80.200589, 43.531276], [-80.202475, 43.531124]]}, {"num": 37, "name": "Zone 37", "polygon_lonlat": [[-80.202413, 43.526638], [-80.20286, 43.526934], [-80.203652, 43.526249], [-80.202094, 43.525008], [-80.200996, 43.525592], [-80.199196, 43.524592], [-80.195876, 43.526749], [-80.198621, 43.528674], [-80.199234, 43.528452], [-80.199694, 43.52873], [-80.202413, 43.526638]]}, {"num": 38, "name": "Zone 38", "polygon_lonlat": [[-80.200539, 43.531672], [-80.199671, 43.531043], [-80.195291, 43.528941], [-80.193453, 43.529932], [-80.198215, 43.533421], [-80.200616, 43.531709], [-80.200539, 43.531672]]}, {"num": 39, "name": "Zone 39", "polygon_lonlat": [[-80.191121, 43.526489], [-80.197811, 43.52336], [-80.197109, 43.521333], [-80.191619, 43.519657], [-80.187609, 43.522962], [-80.191121, 43.526489]]}, {"num": 40, "name": "Zone 40", "polygon_lonlat": [[-80.21871, 43.530887], [-80.217285, 43.528505], [-80.216007, 43.527702], [-80.215181, 43.528437], [-80.215519, 43.528689], [-80.214147, 43.529568], [-80.212588, 43.530276], [-80.208224, 43.53354], [-80.208135, 43.533927], [-80.209315, 43.534174], [-80.214775, 43.533937], [-80.218749, 43.530949], [-80.21871, 43.530887]]}, {"num": 41, "name": "Zone 41", "polygon_lonlat": [[-80.215947, 43.527632], [-80.214268, 43.526448], [-80.204734, 43.533386], [-80.207339, 43.534286], [-80.212525, 43.530182], [-80.213692, 43.529042], [-80.214933, 43.528961], [-80.215462, 43.528721], [-80.215118, 43.528471], [-80.216027, 43.527732], [-80.215947, 43.527632]]}, {"num": 42, "name": "Zone 42", "polygon_lonlat": [[-80.248695, 43.520279], [-80.246917, 43.518821], [-80.244271, 43.520759], [-80.246101, 43.522092], [-80.248695, 43.520279]]}, {"num": 43, "name": "Zone 43", "polygon_lonlat": [[-80.248736, 43.520136], [-80.249871, 43.519344], [-80.243387, 43.514985], [-80.242477, 43.515784], [-80.248736, 43.520136]]}, {"num": 44, "name": "Zone 44", "polygon_lonlat": [[-80.252658, 43.511668], [-80.252018, 43.511043], [-80.250628, 43.51066], [-80.249822, 43.510045], [-80.249363, 43.50942], [-80.248682, 43.509269], [-80.245762, 43.511094], [-80.243305, 43.513189], [-80.244525, 43.514572], [-80.245234, 43.514834], [-80.246958, 43.513514], [-80.247736, 43.512929], [-80.248001, 43.512737], [-80.249627, 43.513957], [-80.252658, 43.511668]]}, {"num": 45, "name": "Zone 45", "polygon_lonlat": [[-80.245968, 43.522218], [-80.242134, 43.519811], [-80.238075, 43.522788], [-80.241669, 43.525394], [-80.245968, 43.522218]]}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+
+const map = L.map("map").setView([43.527, -80.224], 14);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Draw all 35 zone polygons
+ZONES.forEach(z => {
+  const latlngs = z.polygon_lonlat.map(p => [p[1], p[0]]);
+  const poly = L.polygon(latlngs, { color: "#1a73e8", weight: 1.5, fillOpacity: 0.04 }).addTo(map);
+  const c = poly.getBounds().getCenter();
+  L.marker([c.lat, c.lng], {
+    icon: L.divIcon({
+      className: "zone-label",
+      html: `<div style="background:rgba(255,255,255,0.85); padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; color:#1a73e8; white-space:nowrap;">${z.name.replace('Zone ', 'Z')}</div>`,
+      iconSize: [40, 16]
+    })
+  }).addTo(map);
+});
+
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+let allEntries = [];
+let allMarkers = [];
+let currentFilter = "all";
+
+async function refresh() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") {
+    document.getElementById("stats").innerHTML = "<i>Apps Script URL not configured yet</i>";
+    return;
+  }
+  document.getElementById("lastUpdate").textContent = "Loading…";
+  try {
+    const r = await fetch(APPS_SCRIPT_URL + "?action=list");
+    const data = await r.json();
+    allEntries = data.entries || [];
+    redraw();
+    document.getElementById("lastUpdate").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    document.getElementById("lastUpdate").textContent = "Error fetching data: " + err;
+  }
+}
+
+function redraw() {
+  // Clear existing pins
+  allMarkers.forEach(m => map.removeLayer(m));
+  allMarkers = [];
+
+  const counts = { all: allEntries.length, NA: 0, sup: 0, not: 0, und: 0, lawn: 0, fu: 0, family: 0 };
+
+  for (const e of allEntries) {
+    if (e.status === "No Answer") counts.NA++;
+    if (e.status === "Supporter") counts.sup++;
+    if (e.status === "Not Supporter") counts.not++;
+    if (e.status === "Undecided") counts.und++;
+    if (e.lawn === "Y") counts.lawn++;
+    if (e.fu === "Y") counts.fu++;
+    if (e.family === "Y") counts.family++;
+
+    // Apply filter
+    let show = currentFilter === "all";
+    if (currentFilter === "No Answer" && e.status === "No Answer") show = true;
+    if (currentFilter === "Supporter" && e.status === "Supporter") show = true;
+    if (currentFilter === "Not Supporter" && e.status === "Not Supporter") show = true;
+    if (currentFilter === "Undecided" && e.status === "Undecided") show = true;
+    if (currentFilter === "lawn" && e.lawn === "Y") show = true;
+    if (currentFilter === "fu" && e.fu === "Y") show = true;
+    if (currentFilter === "family" && e.family === "Y") show = true;
+    if (!show) continue;
+
+    if (e.lat && e.lon) {
+      const color = STATUS_COLORS[e.status] || "#888";
+      const m = L.circleMarker([e.lat, e.lon], {
+        radius: 5, color: "white", weight: 1.5, fillColor: color, fillOpacity: 0.9
+      }).bindPopup(
+        `<b>${e.address}</b><br>` +
+        `Status: ${e.status}<br>` +
+        (e.name ? `Name: ${e.name}<br>` : "") +
+        (e.issue ? `Issue: ${e.issue}<br>` : "") +
+        (e.lawn === "Y" ? "🪧 <b>Lawn sign</b><br>" : "") +
+        (e.fu === "Y" ? "📞 Follow-up needed<br>" : "") +
+        `<i>${e.volunteer} · ${e.zone}</i>`
+      );
+      m.addTo(map);
+      allMarkers.push(m);
+    }
+  }
+
+  // Update counts
+  document.getElementById("stats").innerHTML =
+    `<b>${counts.all}</b> entries logged across ${ZONES.length} zones`;
+  document.getElementById("c-all").textContent = counts.all;
+  document.getElementById("c-na").textContent = counts.NA;
+  document.getElementById("c-sup").textContent = counts.sup;
+  document.getElementById("c-not").textContent = counts.not;
+  document.getElementById("c-und").textContent = counts.und;
+  document.getElementById("c-lawn").textContent = counts.lawn;
+  document.getElementById("c-fu").textContent = counts.fu;
+  document.getElementById("c-family").textContent = counts.family;
+}
+
+document.querySelectorAll(".filter-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".filter-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    currentFilter = b.dataset.filter;
+    redraw();
+  };
+});
+
+refresh();
+setInterval(refresh, 60000); // every 60 seconds
+</script>
+</body>
+</html>

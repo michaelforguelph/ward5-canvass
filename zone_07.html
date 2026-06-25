@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 07 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 07</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 189</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "07";
+const ZONE_NAME = "Zone 07";
+const ZONE_POLYGON = [[43.511664, -80.252926], [43.513953, -80.249758], [43.51463, -80.251209], [43.515186, -80.251892], [43.516208, -80.252157], [43.517067, -80.253035], [43.51442, -80.256487], [43.513049, -80.255896], [43.512049, -80.25344], [43.511664, -80.252926]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.514175253656894, -80.25335744904484];     // [lat, lon]
+const ADDRESSES = [{"address": "46 Argyle Drive", "lat": 43.51620601647172, "lon": -80.25280526898199}, {"address": "44 Argyle Drive", "lat": 43.5161237349197, "lon": -80.2529691163144}, {"address": "42 Argyle Drive", "lat": 43.51603475762015, "lon": -80.25312979919586}, {"address": "40 Argyle Drive", "lat": 43.515939314794885, "lon": -80.25328878833066}, {"address": "38 Argyle Drive", "lat": 43.51583871683277, "lon": -80.25344915820357}, {"address": "36 Argyle Drive", "lat": 43.51572939053993, "lon": -80.25359458632084}, {"address": "34 Argyle Drive", "lat": 43.515624421832555, "lon": -80.25373514356014}, {"address": "32 Argyle Drive", "lat": 43.51552081962724, "lon": -80.25387608929272}, {"address": "30 Argyle Drive", "lat": 43.51541749560322, "lon": -80.25401429430659}, {"address": "28 Argyle Drive", "lat": 43.51531740291988, "lon": -80.25415620915945}, {"address": "26 Argyle Drive", "lat": 43.51521340317826, "lon": -80.2542927487851}, {"address": "24 Argyle Drive", "lat": 43.51511171735127, "lon": -80.25443356754913}, {"address": "22 Argyle Drive", "lat": 43.51500776317865, "lon": -80.25457714807489}, {"address": "20 Argyle Drive", "lat": 43.51489986821634, "lon": -80.25472164143912}, {"address": "18 Argyle Drive", "lat": 43.51479218338166, "lon": -80.25487008221366}, {"address": "16 Argyle Drive", "lat": 43.514690095398535, "lon": -80.25501161538}, {"address": "14 Argyle Drive", "lat": 43.51459466925057, "lon": -80.25516223653361}, {"address": "12 Argyle Drive", "lat": 43.51448573515146, "lon": -80.25530020184877}, {"address": "10 Argyle Drive", "lat": 43.514402519820365, "lon": -80.25544565368338}, {"address": "8 Argyle Drive", "lat": 43.51433374509488, "lon": -80.25561140380233}, {"address": "47 Argyle Drive", "lat": 43.51581012874381, "lon": -80.25225760854912}, {"address": "45 Argyle Drive", "lat": 43.51568270831616, "lon": -80.2525571710935}, {"address": "43 Argyle Drive", "lat": 43.51561943227917, "lon": -80.25273395712914}, {"address": "41 Argyle Drive", "lat": 43.51554190327386, "lon": -80.25288568106772}, {"address": "33 Argyle Drive", "lat": 43.515074685154126, "lon": -80.25356256936882}, {"address": "31 Argyle Drive", "lat": 43.51496330514504, "lon": -80.25369838878228}, {"address": "29 Argyle Drive", "lat": 43.51484651363092, "lon": -80.25386969911332}, {"address": "23 Argyle Drive", "lat": 43.51444664648123, "lon": -80.25441246425554}, {"address": "21 Argyle Drive", "lat": 43.51434136372363, "lon": -80.2545561103056}, {"address": "19 Argyle Drive", "lat": 43.51423580016024, "lon": -80.25470173764137}, {"address": "17 Argyle Drive", "lat": 43.51412456682694, "lon": -80.25484327962}, {"address": "15 Argyle Drive", "lat": 43.514023936232896, "lon": -80.25499898183556}, {"address": "11 Argyle Drive", "lat": 43.51392688925849, "lon": -80.25517820362617}, {"address": "9 Argyle Drive", "lat": 43.51382925874827, "lon": -80.25537557093035}, {"address": "7 Argyle Drive", "lat": 43.5137589801406, "lon": -80.25557640582313}, {"address": "5 Devere Drive", "lat": 43.516559709107014, "lon": -80.2529126035629}, {"address": "9 Devere Drive", "lat": 43.516456576453606, "lon": -80.25269615874558}, {"address": "11 Devere Drive", "lat": 43.51632618459857, "lon": -80.25254137414427}, {"address": "15 Devere Drive", "lat": 43.51617797802408, "lon": -80.25240895481312}, {"address": "21 Devere Drive", "lat": 43.51563294630405, "lon": -80.25223988151699}, {"address": "23 Devere Drive", "lat": 43.515476729937724, "lon": -80.25229274094468}, {"address": "25 Devere Drive", "lat": 43.51531280201408, "lon": -80.25225468054043}, {"address": "27 Devere Drive", "lat": 43.51514630341105, "lon": -80.25219019474686}, {"address": "29 Devere Drive", "lat": 43.51498563364208, "lon": -80.25210911884666}, {"address": "31 Devere Drive", "lat": 43.51482601434933, "lon": -80.25201368951792}, {"address": "35 Devere Drive", "lat": 43.514563008607944, "lon": -80.25173116850354}, {"address": "37 Devere Drive", "lat": 43.5144360060627, "lon": -80.25153093989633}, {"address": "43 Devere Drive", "lat": 43.514236029045136, "lon": -80.25082028552232}, {"address": "45 Devere Drive", "lat": 43.51419307293157, "lon": -80.25061370224468}, {"address": "47 Devere Drive", "lat": 43.51413740229855, "lon": -80.25044239165886}, {"address": "55 Devere Drive", "lat": 43.5138694963036, "lon": -80.25008356260128}, {"address": "6 Dovercliffe Road", "lat": 43.51472863060106, "lon": -80.2536138636916}, {"address": "8 Dovercliffe Road", "lat": 43.51459055856632, "lon": -80.25350833161309}, {"address": "10 Dovercliffe Road", "lat": 43.51444953050973, "lon": -80.25340765177376}, {"address": "12 Dovercliffe Road", "lat": 43.51431329406978, "lon": -80.2533178108568}, {"address": "14 Dovercliffe Road", "lat": 43.51418590671955, "lon": -80.25323317759188}, {"address": "16 Dovercliffe Road", "lat": 43.51405841123, "lon": -80.25314895429797}, {"address": "18 Dovercliffe Road", "lat": 43.51392628926291, "lon": -80.25305673161515}, {"address": "20 Dovercliffe Road", "lat": 43.51379157968595, "lon": -80.25296910041172}, {"address": "22 Dovercliffe Road", "lat": 43.51363128505097, "lon": -80.25290580706479}, {"address": "24 Dovercliffe Road", "lat": 43.513460935989514, "lon": -80.25287278901509}, {"address": "26 Dovercliffe Road", "lat": 43.51328719836635, "lon": -80.25290270410181}, {"address": "28 Dovercliffe Road", "lat": 43.51312825420981, "lon": -80.2529669966817}, {"address": "3 Dovercliffe Road", "lat": 43.51456785237326, "lon": -80.25425062971348}, {"address": "5 Dovercliffe Road", "lat": 43.51436257744528, "lon": -80.25411040072522}, {"address": "15 Dovercliffe Road", "lat": 43.513718492882404, "lon": -80.25372781772826}, {"address": "17 Dovercliffe Road", "lat": 43.51360215586345, "lon": -80.25362967266658}, {"address": "21 Dovercliffe Road", "lat": 43.513442861880215, "lon": -80.25363477966516}, {"address": "25 Dovercliffe Road", "lat": 43.51328839190531, "lon": -80.25365016160269}, {"address": "27 Dovercliffe Road", "lat": 43.51316004295677, "lon": -80.25369502218477}, {"address": "29 Dovercliffe Road", "lat": 43.513063821014086, "lon": -80.25383657894092}, {"address": "31 Dovercliffe Road", "lat": 43.5129646110091, "lon": -80.25398927101577}, {"address": "33 Dovercliffe Road", "lat": 43.512856583926926, "lon": -80.25415301794432}, {"address": "35 Dovercliffe Road", "lat": 43.51261196055122, "lon": -80.25419418951009}, {"address": "1 Picadilly Place", "lat": 43.514218340051755, "lon": -80.25399815169632}, {"address": "3 Picadilly Place", "lat": 43.51414220463302, "lon": -80.25430152888069}, {"address": "5 Picadilly Place", "lat": 43.514033426696635, "lon": -80.25445196154521}, {"address": "7 Picadilly Place", "lat": 43.51392898225808, "lon": -80.2545883003065}, {"address": "9 Picadilly Place", "lat": 43.51382652740405, "lon": -80.25473566126635}, {"address": "11 Picadilly Place", "lat": 43.51373413627835, "lon": -80.25492749474176}, {"address": "15 Picadilly Place", "lat": 43.51359225858477, "lon": -80.25517740258951}, {"address": "17 Picadilly Place", "lat": 43.51333397427017, "lon": -80.2551201216286}, {"address": "4 Picadilly Place", "lat": 43.51386720535811, "lon": -80.25383615735157}, {"address": "8 Picadilly Place", "lat": 43.51364634761653, "lon": -80.25406606036614}, {"address": "10 Picadilly Place", "lat": 43.51348143544949, "lon": -80.2540862849071}, {"address": "12 Picadilly Place", "lat": 43.51326772427325, "lon": -80.25413969355306}, {"address": "14 Picadilly Place", "lat": 43.51311772582854, "lon": -80.25430335037923}, {"address": "16 Picadilly Place", "lat": 43.51310490106424, "lon": -80.25461597615228}, {"address": "18 Picadilly Place", "lat": 43.51320093119585, "lon": -80.25488616616629}, {"address": "2 Chartwell Crescent", "lat": 43.51544605702222, "lon": -80.25305632920211}, {"address": "6 Chartwell Crescent", "lat": 43.51535819370048, "lon": -80.25276667576178}, {"address": "8 Chartwell Crescent", "lat": 43.51526869775613, "lon": -80.25270686402972}, {"address": "10 Chartwell Crescent", "lat": 43.51518282995329, "lon": -80.25264366464673}, {"address": "12 Chartwell Crescent", "lat": 43.51508956584449, "lon": -80.25258856296243}, {"address": "14 Chartwell Crescent", "lat": 43.51499768752405, "lon": -80.25253663890986}, {"address": "16 Chartwell Crescent", "lat": 43.51490276927219, "lon": -80.2524881462988}, {"address": "18 Chartwell Crescent", "lat": 43.51480094665851, "lon": -80.25244972361395}, {"address": "20 Chartwell Crescent", "lat": 43.51471227295872, "lon": -80.25240855289711}, {"address": "22 Chartwell Crescent", "lat": 43.51462906074586, "lon": -80.25235725859739}, {"address": "24 Chartwell Crescent", "lat": 43.514545276544524, "lon": -80.25228473061847}, {"address": "26 Chartwell Crescent", "lat": 43.51447490657417, "lon": -80.25220583369575}, {"address": "28 Chartwell Crescent", "lat": 43.5144083184713, "lon": -80.25212420545225}, {"address": "30 Chartwell Crescent", "lat": 43.514347989833055, "lon": -80.25202988030149}, {"address": "32 Chartwell Crescent", "lat": 43.51428222067504, "lon": -80.25193815763153}, {"address": "44 Chartwell Crescent", "lat": 43.51419993647901, "lon": -80.2518024960741}, {"address": "3 Chartwell Crescent", "lat": 43.515187391809626, "lon": -80.25339262706616}, {"address": "5 Chartwell Crescent", "lat": 43.51498737993432, "lon": -80.25329034287279}, {"address": "7 Chartwell Crescent", "lat": 43.514906024484695, "lon": -80.25322328525289}, {"address": "9 Chartwell Crescent", "lat": 43.51482628065653, "lon": -80.2531715138629}, {"address": "11 Chartwell Crescent", "lat": 43.51473975886336, "lon": -80.25312656545485}, {"address": "15 Chartwell Crescent", "lat": 43.51464142664882, "lon": -80.25308044642327}, {"address": "17 Chartwell Crescent", "lat": 43.514550467105316, "lon": -80.25302247789867}, {"address": "19 Chartwell Crescent", "lat": 43.514462856427365, "lon": -80.25296330275923}, {"address": "21 Chartwell Crescent", "lat": 43.514375353414785, "lon": -80.25289814814971}, {"address": "23 Chartwell Crescent", "lat": 43.51428750578524, "lon": -80.25283097015627}, {"address": "25 Chartwell Crescent", "lat": 43.51420000251634, "lon": -80.25276013951644}, {"address": "27 Chartwell Crescent", "lat": 43.514114924462554, "lon": -80.2526878575765}, {"address": "29 Chartwell Crescent", "lat": 43.51402915509594, "lon": -80.25261148296505}, {"address": "31 Chartwell Crescent", "lat": 43.51394409817074, "lon": -80.25254244765104}, {"address": "33 Chartwell Crescent", "lat": 43.51385259709518, "lon": -80.25251448868397}, {"address": "35 Chartwell Crescent", "lat": 43.51374635775169, "lon": -80.25249436145695}, {"address": "37 Chartwell Crescent", "lat": 43.513631509518724, "lon": -80.25244353383327}, {"address": "39 Chartwell Crescent", "lat": 43.51360550776212, "lon": -80.25229561015894}, {"address": "41 Chartwell Crescent", "lat": 43.513571617541366, "lon": -80.25214236996639}, {"address": "43 Chartwell Crescent", "lat": 43.51356809503142, "lon": -80.25182099691362}, {"address": "45 Chartwell Crescent", "lat": 43.513617095341516, "lon": -80.25174795614693}, {"address": "47 Chartwell Crescent", "lat": 43.513681113193044, "lon": -80.25165625429712}, {"address": "49 Chartwell Crescent", "lat": 43.513741859916216, "lon": -80.25157874895513}, {"address": "51 Chartwell Crescent", "lat": 43.51380484391422, "lon": -80.25148841798377}, {"address": "53 Chartwell Crescent", "lat": 43.51386557496564, "lon": -80.25141321250449}, {"address": "55 Chartwell Crescent", "lat": 43.513928425736665, "lon": -80.25132510735088}, {"address": "57 Chartwell Crescent", "lat": 43.51399505235656, "lon": -80.25124421907863}, {"address": "59 Chartwell Crescent", "lat": 43.51406232297129, "lon": -80.25115003361006}, {"address": "61 Chartwell Crescent", "lat": 43.51413236802755, "lon": -80.25105768307061}, {"address": "63 Chartwell Crescent", "lat": 43.514302195624936, "lon": -80.25101761580846}, {"address": "474 College Avenue West", "lat": 43.51674302650756, "lon": -80.2530394187591}, {"address": "478 College Avenue West", "lat": 43.5166350802846, "lon": -80.25321518696717}, {"address": "486 College Avenue West", "lat": 43.51652865617349, "lon": -80.25336072270389}, {"address": "492 College Avenue West", "lat": 43.516225147496584, "lon": -80.25361112742016}, {"address": "500 College Avenue West", "lat": 43.516028835962295, "lon": -80.2538778868085}, {"address": "506 College Avenue West", "lat": 43.515833524861094, "lon": -80.25414544254392}, {"address": "514 College Avenue West", "lat": 43.51563838884767, "lon": -80.25441177692656}, {"address": "522 College Avenue West", "lat": 43.51544296373966, "lon": -80.25467902747444}, {"address": "530 College Avenue West", "lat": 43.51524701985579, "lon": -80.25494607852569}, {"address": "538 College Avenue West", "lat": 43.51505288059167, "lon": -80.25521269982823}, {"address": "540 College Avenue West", "lat": 43.5149117535194, "lon": -80.25541369994674}, {"address": "542 College Avenue West", "lat": 43.51482535755459, "lon": -80.25555787656879}, {"address": "546 College Avenue West", "lat": 43.51472707376882, "lon": -80.25568334334447}, {"address": "550 College Avenue West", "lat": 43.514609913839195, "lon": -80.25580418057324}, {"address": "554 College Avenue West", "lat": 43.51452744292588, "lon": -80.25592617352757}, {"address": "556 College Avenue West", "lat": 43.514440846983774, "lon": -80.25595475611564}, {"address": "558 College Avenue West", "lat": 43.51434428873856, "lon": -80.25597697296992}, {"address": "560 College Avenue West", "lat": 43.5142237736818, "lon": -80.25599598766718}, {"address": "564 College Avenue West", "lat": 43.51389599360626, "lon": -80.25596158652785}, {"address": "566 College Avenue West", "lat": 43.513800191175164, "lon": -80.2559470545779}, {"address": "568 College Avenue West", "lat": 43.51371067724572, "lon": -80.25592960846211}, {"address": "570 College Avenue West", "lat": 43.51362130696858, "lon": -80.25590587308943}, {"address": "572 College Avenue West", "lat": 43.51353426046508, "lon": -80.25584820950871}, {"address": "574 College Avenue West", "lat": 43.51345596011569, "lon": -80.25578562213502}, {"address": "576 College Avenue West", "lat": 43.51338149758966, "lon": -80.25571214605709}, {"address": "578 College Avenue West", "lat": 43.51331132507544, "lon": -80.25563486496576}, {"address": "582 College Avenue West", "lat": 43.513244712698665, "lon": -80.25555480481702}, {"address": "584 College Avenue West", "lat": 43.51318194462969, "lon": -80.25547038961993}, {"address": "586 College Avenue West", "lat": 43.51312188378695, "lon": -80.25538275055169}, {"address": "588 College Avenue West", "lat": 43.51306393306561, "lon": -80.25529062557895}, {"address": "590 College Avenue West", "lat": 43.51300980505592, "lon": -80.2551906964901}, {"address": "592 College Avenue West", "lat": 43.51295795481822, "lon": -80.25509170210721}, {"address": "594 College Avenue West", "lat": 43.51290802995718, "lon": -80.25497272564301}, {"address": "596 College Avenue West", "lat": 43.51286774780784, "lon": -80.25485833828506}, {"address": "598 College Avenue West", "lat": 43.512828011103636, "lon": -80.25474283088532}, {"address": "600 College Avenue West", "lat": 43.512787836840054, "lon": -80.25462803917571}, {"address": "602 College Avenue West", "lat": 43.51274819321342, "lon": -80.2545155187716}, {"address": "604 College Avenue West", "lat": 43.512704122377656, "lon": -80.25440842741348}, {"address": "608 College Avenue West", "lat": 43.512658111074295, "lon": -80.25430921260151}, {"address": "612 College Avenue West", "lat": 43.51249271923514, "lon": -80.25380930797844}, {"address": "614 College Avenue West", "lat": 43.51244127682388, "lon": -80.2536804150426}, {"address": "618 College Avenue West", "lat": 43.512397898791235, "lon": -80.253560950551}, {"address": "620 College Avenue West", "lat": 43.51234610501698, "lon": -80.2534459980877}, {"address": "622 College Avenue West", "lat": 43.51229421037016, "lon": -80.25334402024694}, {"address": "624 College Avenue West", "lat": 43.512229206811334, "lon": -80.25324514501894}, {"address": "626 College Avenue West", "lat": 43.512161746325134, "lon": -80.25314274957148}, {"address": "628 College Avenue West", "lat": 43.51209049752999, "lon": -80.25305342741328}, {"address": "630 College Avenue West", "lat": 43.51202492599354, "lon": -80.2529635776768}, {"address": "632 College Avenue West", "lat": 43.51195974200356, "lon": -80.25287103866391}, {"address": "38 Dovercliffe Road", "lat": 43.51280940592633, "lon": -80.2531497536133}, {"address": "33 Devere Drive", "lat": 43.514686062023245, "lon": -80.251908488513}, {"address": "490 College Avenue West", "lat": 43.51643149110295, "lon": -80.25349401105994}, {"address": "488 College Avenue West", "lat": 43.51647963443266, "lon": -80.2534240162387}, {"address": "484 College Avenue West", "lat": 43.51658063945836, "lon": -80.25329509863187}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 189;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

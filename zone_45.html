@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 45 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 45</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 235</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "45";
+const ZONE_NAME = "Zone 45";
+const ZONE_POLYGON = [[43.522218, -80.245968], [43.519811, -80.242134], [43.522788, -80.238075], [43.525394, -80.241669], [43.522218, -80.245968]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.522566627914834, -80.24197896292668];     // [lat, lon]
+const ADDRESSES = [{"address": "216 Scottsdale Drive", "lat": 43.52322377122527, "lon": -80.2410135380212}, {"address": "116 Scottsdale Drive", "lat": 43.52242932455913, "lon": -80.24241007517209}, {"address": "188 Scottsdale Drive", "lat": 43.52273302142322, "lon": -80.24145180566491}, {"address": "102 Scottsdale Drive", "lat": 43.52374527953657, "lon": -80.24171740761511}, {"address": "84 Scottsdale Drive", "lat": 43.523487909754465, "lon": -80.24213862173886}, {"address": "264 Scottsdale Drive", "lat": 43.52210496575283, "lon": -80.2416036577745}, {"address": "7 Wilsonview Avenue", "lat": 43.52255383107335, "lon": -80.23905788093703}, {"address": "230 Scottsdale Drive", "lat": 43.522833316546475, "lon": -80.24052322455998}, {"address": "180 Scottsdale Drive", "lat": 43.52252866033452, "lon": -80.24171332927807}, {"address": "88 Scottsdale Drive", "lat": 43.52401188520987, "lon": -80.24213969829907}, {"address": "162 Scottsdale Drive", "lat": 43.52287139421635, "lon": -80.2417147915461}, {"address": "170 Scottsdale Drive", "lat": 43.523089809607875, "lon": -80.24150274889207}, {"address": "200 Scottsdale Drive", "lat": 43.52268678680955, "lon": -80.24138222793626}, {"address": "122 Scottsdale Drive", "lat": 43.52230257110267, "lon": -80.24230258247948}, {"address": "66 Scottsdale Drive", "lat": 43.52355812526749, "lon": -80.24239589717043}, {"address": "274 Scottsdale Drive", "lat": 43.52182597288558, "lon": -80.24165475243721}, {"address": "280 Scottsdale Drive", "lat": 43.521778396830626, "lon": -80.24135378294055}, {"address": "260 Scottsdale Drive", "lat": 43.52217081537164, "lon": -80.24148555776682}, {"address": "144 Scottsdale Drive", "lat": 43.52308197479207, "lon": -80.24161116507194}, {"address": "252 Scottsdale Drive", "lat": 43.52235284550245, "lon": -80.24122498797458}, {"address": "92 Scottsdale Drive", "lat": 43.52394255040532, "lon": -80.24203286174392}, {"address": "176 Scottsdale Drive", "lat": 43.52324519978022, "lon": -80.24132697248135}, {"address": "164 Scottsdale Drive", "lat": 43.52291846591486, "lon": -80.24164628187478}, {"address": "226 Scottsdale Drive", "lat": 43.522889271719166, "lon": -80.24062804619662}, {"address": "204 Scottsdale Drive", "lat": 43.52317669991461, "lon": -80.24108204852807}, {"address": "104 Scottsdale Drive", "lat": 43.52369889619206, "lon": -80.24167248729842}, {"address": "56 Scottsdale Drive", "lat": 43.52313651925204, "lon": -80.24208527065089}, {"address": "240 Scottsdale Drive", "lat": 43.52258728988799, "lon": -80.24094887599149}, {"address": "142 Scottsdale Drive", "lat": 43.52302950482157, "lon": -80.24168207880714}, {"address": "208 Scottsdale Drive", "lat": 43.5230931884333, "lon": -80.24094545941173}, {"address": "138 Scottsdale Drive", "lat": 43.52291949731856, "lon": -80.2417720613533}, {"address": "168 Scottsdale Drive", "lat": 43.52302675442227, "lon": -80.24154394901291}, {"address": "228 Scottsdale Drive", "lat": 43.5228629268357, "lon": -80.24057051799524}, {"address": "184 Scottsdale Drive", "lat": 43.52261749544648, "lon": -80.24156391895077}, {"address": "166 Scottsdale Drive", "lat": 43.52298327124698, "lon": -80.24161250055177}, {"address": "32 Scottsdale Drive", "lat": 43.52297010421816, "lon": -80.24259876523732}, {"address": "198 Scottsdale Drive", "lat": 43.52263075882733, "lon": -80.24144816831827}, {"address": "244 Scottsdale Drive", "lat": 43.52252470627335, "lon": -80.2410567439971}, {"address": "72 Scottsdale Drive", "lat": 43.52343908859894, "lon": -80.2421997129807}, {"address": "20 Scottsdale Drive", "lat": 43.52317223055923, "lon": -80.24300058586086}, {"address": "128 Scottsdale Drive", "lat": 43.52214037907698, "lon": -80.24212070255533}, {"address": "246 Scottsdale Drive", "lat": 43.52249025542862, "lon": -80.24110330487696}, {"address": "74 Scottsdale Drive", "lat": 43.52339816261959, "lon": -80.24214252450052}, {"address": "160 Scottsdale Drive", "lat": 43.522829750191086, "lon": -80.24177596460983}, {"address": "80 Scottsdale Drive", "lat": 43.52357877699204, "lon": -80.24224570410226}, {"address": "242 Scottsdale Drive", "lat": 43.52255280330964, "lon": -80.24100130518131}, {"address": "36 Scottsdale Drive", "lat": 43.522842811736204, "lon": -80.24258004328404}, {"address": "124 Scottsdale Drive", "lat": 43.522249129736466, "lon": -80.24223785257522}, {"address": "64 Scottsdale Drive", "lat": 43.52359727162273, "lon": -80.24245059998759}, {"address": "86 Scottsdale Drive", "lat": 43.52344520513042, "lon": -80.24207894603774}, {"address": "90 Scottsdale Drive", "lat": 43.523976268290404, "lon": -80.24209490005629}, {"address": "70 Scottsdale Drive", "lat": 43.523489000408524, "lon": -80.24225453819791}, {"address": "148 Scottsdale Drive", "lat": 43.523183175483254, "lon": -80.24149395415829}, {"address": "220 Scottsdale Drive", "lat": 43.5231312729331, "lon": -80.24087931243658}, {"address": "114 Scottsdale Drive", "lat": 43.52246856016424, "lon": -80.24244998153465}, {"address": "190 Scottsdale Drive", "lat": 43.52243535507481, "lon": -80.24171226074398}, {"address": "108 Scottsdale Drive", "lat": 43.52261832553515, "lon": -80.24260952528941}, {"address": "238 Scottsdale Drive", "lat": 43.52261018177499, "lon": -80.24087136893576}, {"address": "44 Scottsdale Drive", "lat": 43.52327571056334, "lon": -80.24250856278617}, {"address": "126 Scottsdale Drive", "lat": 43.52219731883775, "lon": -80.24220026810114}, {"address": "26 Scottsdale Drive", "lat": 43.52305135469008, "lon": -80.24281177865501}, {"address": "236 Scottsdale Drive", "lat": 43.52274039141381, "lon": -80.24035194692364}, {"address": "136 Scottsdale Drive", "lat": 43.52287960245502, "lon": -80.24184065304902}, {"address": "248 Scottsdale Drive", "lat": 43.52243775243487, "lon": -80.241133517036}, {"address": "214 Scottsdale Drive", "lat": 43.52326644700523, "lon": -80.24107814421357}, {"address": "250 Scottsdale Drive", "lat": 43.52238944890344, "lon": -80.2411755171554}, {"address": "120 Scottsdale Drive", "lat": 43.522549290200125, "lon": -80.24245337277509}, {"address": "118 Scottsdale Drive", "lat": 43.522599112635895, "lon": -80.24252299413075}, {"address": "146 Scottsdale Drive", "lat": 43.523139722648494, "lon": -80.24155757320636}, {"address": "158 Scottsdale Drive", "lat": 43.52278632662849, "lon": -80.24183465289241}, {"address": "212 Scottsdale Drive", "lat": 43.52299339292305, "lon": -80.24083087926985}, {"address": "106 Scottsdale Drive", "lat": 43.522652133290634, "lon": -80.24265676707029}, {"address": "256 Scottsdale Drive", "lat": 43.52225141569854, "lon": -80.24139990769268}, {"address": "254 Scottsdale Drive", "lat": 43.52230560074302, "lon": -80.24126846699056}, {"address": "134 Scottsdale Drive", "lat": 43.52283259039996, "lon": -80.24189929965233}, {"address": "38 Scottsdale Drive", "lat": 43.523405603162196, "lon": -80.24269007531203}, {"address": "28 Scottsdale Drive", "lat": 43.52302469443307, "lon": -80.2427695489176}, {"address": "194 Scottsdale Drive", "lat": 43.52252238035427, "lon": -80.24156529614919}, {"address": "150 Scottsdale Drive", "lat": 43.52323546527812, "lon": -80.2414526301474}, {"address": "234 Scottsdale Drive", "lat": 43.52277533162953, "lon": -80.24040076957962}, {"address": "258 Scottsdale Drive", "lat": 43.52220526547704, "lon": -80.24143899736181}, {"address": "292 Scottsdale Drive", "lat": 43.522152691537684, "lon": -80.24077698933247}, {"address": "266 Scottsdale Drive", "lat": 43.522048983193685, "lon": -80.24167931767698}, {"address": "34 Scottsdale Drive", "lat": 43.522875379256334, "lon": -80.24253602836916}, {"address": "192 Scottsdale Drive", "lat": 43.52248061693478, "lon": -80.24164619582936}, {"address": "182 Scottsdale Drive", "lat": 43.52256864427657, "lon": -80.24162994242212}, {"address": "98 Scottsdale Drive", "lat": 43.52384655401982, "lon": -80.24188379553405}, {"address": "270 Scottsdale Drive", "lat": 43.521882896754356, "lon": -80.24177572647599}, {"address": "110 Scottsdale Drive", "lat": 43.522555688674295, "lon": -80.24258168041959}, {"address": "40 Scottsdale Drive", "lat": 43.52334557040443, "lon": -80.24262268300988}, {"address": "272 Scottsdale Drive", "lat": 43.521850074730835, "lon": -80.24172986302023}, {"address": "172 Scottsdale Drive", "lat": 43.5231350428333, "lon": -80.24144161578349}, {"address": "232 Scottsdale Drive", "lat": 43.52280810101349, "lon": -80.24045543657087}, {"address": "60 Scottsdale Drive", "lat": 43.52318362150583, "lon": -80.24201182949034}, {"address": "68 Scottsdale Drive", "lat": 43.52353351389129, "lon": -80.2423117685573}, {"address": "262 Scottsdale Drive", "lat": 43.52214054631795, "lon": -80.24154683895866}, {"address": "130 Scottsdale Drive", "lat": 43.52275093265669, "lon": -80.242048790925}, {"address": "24 Scottsdale Drive", "lat": 43.52307065758648, "lon": -80.2428835149402}, {"address": "96 Scottsdale Drive", "lat": 43.52387125580146, "lon": -80.24195312859406}, {"address": "112 Scottsdale Drive", "lat": 43.52250221800725, "lon": -80.24252188140379}, {"address": "30 Scottsdale Drive", "lat": 43.52300729060939, "lon": -80.24268057165017}, {"address": "132 Scottsdale Drive", "lat": 43.52280340196162, "lon": -80.24197787784544}, {"address": "82 Scottsdale Drive", "lat": 43.52354144038688, "lon": -80.24218855591063}, {"address": "46 Scottsdale Drive", "lat": 43.5232419027391, "lon": -80.24246131936984}, {"address": "174 Scottsdale Drive", "lat": 43.523199937210116, "lon": -80.2413930372484}, {"address": "140 Scottsdale Drive", "lat": 43.522962890532106, "lon": -80.24171830558646}, {"address": "100 Scottsdale Drive", "lat": 43.523776919336, "lon": -80.24182627719031}, {"address": "52 Scottsdale Drive", "lat": 43.52305797051874, "lon": -80.2423137123824}, {"address": "294 Scottsdale Drive", "lat": 43.52211018272127, "lon": -80.24070677334198}, {"address": "42 Scottsdale Drive", "lat": 43.52331888138632, "lon": -80.24255396786141}, {"address": "78 Scottsdale Drive", "lat": 43.523601608915705, "lon": -80.24232734676833}, {"address": "62 Scottsdale Drive", "lat": 43.52314088648323, "lon": -80.24195708564433}, {"address": "268 Scottsdale Drive", "lat": 43.521934990307464, "lon": -80.24181300617003}, {"address": "154 Scottsdale Drive", "lat": 43.52270641815097, "lon": -80.24199156274119}, {"address": "54 Scottsdale Drive", "lat": 43.52302425185271, "lon": -80.24225167489175}, {"address": "152 Scottsdale Drive", "lat": 43.52328971462278, "lon": -80.24138420191294}, {"address": "196 Scottsdale Drive", "lat": 43.52256942255474, "lon": -80.24150171817158}, {"address": "202 Scottsdale Drive", "lat": 43.52322658286467, "lon": -80.24114180528241}, {"address": "50 Scottsdale Drive", "lat": 43.523118558400725, "lon": -80.24238345685889}, {"address": "218 Scottsdale Drive", "lat": 43.52317931677855, "lon": -80.24094644598476}, {"address": "210 Scottsdale Drive", "lat": 43.52304143679668, "lon": -80.24089801262781}, {"address": "224 Scottsdale Drive", "lat": 43.52303690590689, "lon": -80.24075739570532}, {"address": "206 Scottsdale Drive", "lat": 43.52313767318105, "lon": -80.24100762112272}, {"address": "48 Scottsdale Drive", "lat": 43.52318098554753, "lon": -80.2424458245125}, {"address": "288 Scottsdale Drive", "lat": 43.5222415363944, "lon": -80.24092998266474}, {"address": "156 Scottsdale Drive", "lat": 43.52275351944288, "lon": -80.24191812080898}, {"address": "22 Scottsdale Drive", "lat": 43.52311704047187, "lon": -80.24292843696924}, {"address": "186 Scottsdale Drive", "lat": 43.52268061127489, "lon": -80.24151285627458}, {"address": "222 Scottsdale Drive", "lat": 43.52308316938924, "lon": -80.24082204314699}, {"address": "94 Scottsdale Drive", "lat": 43.523914170113144, "lon": -80.24197828146484}, {"address": "58 Scottsdale Drive", "lat": 43.52309559411633, "lon": -80.24202808252059}, {"address": "178 Scottsdale Drive", "lat": 43.52248520737472, "lon": -80.2417769487133}, {"address": "76 Scottsdale Drive", "lat": 43.52364434375439, "lon": -80.24238209005294}, {"address": "383 Edinburgh Road South", "lat": 43.52303251835468, "lon": -80.23945455322831}, {"address": "375 Edinburgh Road South", "lat": 43.52392011918071, "lon": -80.2414787957921}, {"address": "381 Edinburgh Road South", "lat": 43.523584498492134, "lon": -80.23999437326181}, {"address": "383 Edinburgh Road South 1", "lat": 43.52337653524586, "lon": -80.23926110945783}, {"address": "383 Edinburgh Road South 2", "lat": 43.52334638427705, "lon": -80.23930747816262}, {"address": "383 Edinburgh Road South 3", "lat": 43.52330797570828, "lon": -80.23935658255844}, {"address": "383 Edinburgh Road South 4", "lat": 43.523284922328905, "lon": -80.23942143435418}, {"address": "383 Edinburgh Road South 5", "lat": 43.52323721918214, "lon": -80.23947467946385}, {"address": "383 Edinburgh Road South 6", "lat": 43.523310393901966, "lon": -80.23980816807901}, {"address": "383 Edinburgh Road South 7", "lat": 43.52327978675463, "lon": -80.23975968937128}, {"address": "383 Edinburgh Road South 8", "lat": 43.52323467317286, "lon": -80.23972520120014}, {"address": "383 Edinburgh Road South 9", "lat": 43.5232030444311, "lon": -80.23967529631312}, {"address": "383 Edinburgh Road South 10", "lat": 43.52311942608466, "lon": -80.23953561813131}, {"address": "383 Edinburgh Road South 11", "lat": 43.52308719749196, "lon": -80.23958479429774}, {"address": "383 Edinburgh Road South 12", "lat": 43.52305692604693, "lon": -80.23965097754859}, {"address": "383 Edinburgh Road South 14", "lat": 43.52302665457119, "lon": -80.23971716197087}, {"address": "383 Edinburgh Road South 15", "lat": 43.52308285254724, "lon": -80.24013255547641}, {"address": "383 Edinburgh Road South 16", "lat": 43.52305733434335, "lon": -80.24009404459335}, {"address": "383 Edinburgh Road South 17", "lat": 43.52302868354067, "lon": -80.24006257556914}, {"address": "383 Edinburgh Road South 18", "lat": 43.523001174683294, "lon": -80.24001271670953}, {"address": "383 Edinburgh Road South 19", "lat": 43.52297569173803, "lon": -80.23996854434023}, {"address": "383 Edinburgh Road South 20", "lat": 43.52294504937032, "lon": -80.23992572863936}, {"address": "383 Edinburgh Road South 21", "lat": 43.52288984237271, "lon": -80.2398571517164}, {"address": "383 Edinburgh Road South 22", "lat": 43.522860238721, "lon": -80.2398129322441}, {"address": "383 Edinburgh Road South 23", "lat": 43.52282031893771, "lon": -80.23977142482686}, {"address": "383 Edinburgh Road South 24", "lat": 43.522783548001875, "lon": -80.23972004550016}, {"address": "383 Edinburgh Road South 25", "lat": 43.52275089769023, "lon": -80.239668713476}, {"address": "383 Edinburgh Road South 26", "lat": 43.52271096067667, "lon": -80.23963003886084}, {"address": "383 Edinburgh Road South 27", "lat": 43.52277574264887, "lon": -80.2394779017362}, {"address": "383 Edinburgh Road South 28", "lat": 43.52281004871207, "lon": -80.23942591921836}, {"address": "383 Edinburgh Road South 29", "lat": 43.5228504995518, "lon": -80.23937966906001}, {"address": "383 Edinburgh Road South 30", "lat": 43.52289083098301, "lon": -80.23935323370303}, {"address": "383 Edinburgh Road South 31", "lat": 43.522920964796896, "lon": -80.23930969677768}, {"address": "383 Edinburgh Road South 32", "lat": 43.52295521923231, "lon": -80.23926620578439}, {"address": "383 Edinburgh Road South 33", "lat": 43.5229853539124, "lon": -80.23922266875812}, {"address": "383 Edinburgh Road South 34", "lat": 43.52304235236945, "lon": -80.2391652840336}, {"address": "383 Edinburgh Road South 35", "lat": 43.52298446328341, "lon": -80.23885886684012}, {"address": "383 Edinburgh Road South 36", "lat": 43.52301408357712, "lon": -80.23890025577008}, {"address": "383 Edinburgh Road South 37", "lat": 43.52306449237303, "lon": -80.23891073892403}, {"address": "383 Edinburgh Road South 38", "lat": 43.52309710868207, "lon": -80.23896773362425}, {"address": "383 Edinburgh Road South 39", "lat": 43.52315674419156, "lon": -80.238985400357}, {"address": "383 Edinburgh Road South 40", "lat": 43.52319353263415, "lon": -80.23903394936619}, {"address": "383 Edinburgh Road South 41", "lat": 43.52322825982447, "lon": -80.23908247360829}, {"address": "138 College Avenue West", "lat": 43.52478068756001, "lon": -80.24189079105615}, {"address": "152 College Avenue West", "lat": 43.52460190147913, "lon": -80.24233944351082}, {"address": "166 College Avenue West", "lat": 43.524075067219385, "lon": -80.2429378103593}, {"address": "180 College Avenue West", "lat": 43.5237138391442, "lon": -80.24343712538341}, {"address": "204 College Avenue West", "lat": 43.52318179041726, "lon": -80.2441480333814}, {"address": "216 College Avenue West", "lat": 43.52291987802511, "lon": -80.24451024328651}, {"address": "230 College Avenue West", "lat": 43.52253288425074, "lon": -80.24498864169956}, {"address": "240 College Avenue West", "lat": 43.52220820263439, "lon": -80.2448877376371}, {"address": "248 College Avenue West", "lat": 43.522199614945144, "lon": -80.24540483996128}, {"address": "276 Scottsdale Drive", "lat": 43.52170500118405, "lon": -80.241442339068}, {"address": "278 Scottsdale Drive", "lat": 43.521745602197306, "lon": -80.2413981061645}, {"address": "282 Scottsdale Drive", "lat": 43.52182433130642, "lon": -80.24128815551153}, {"address": "284 Scottsdale Drive", "lat": 43.52188073839654, "lon": -80.24121192101276}, {"address": "286 Scottsdale Drive", "lat": 43.52193450043448, "lon": -80.24114280728237}, {"address": "290 Scottsdale Drive", "lat": 43.52219638268894, "lon": -80.24086688741657}, {"address": "296 Scottsdale Drive", "lat": 43.52205313538966, "lon": -80.24067393822516}, {"address": "298 Scottsdale Drive", "lat": 43.52201449733203, "lon": -80.24060913075539}, {"address": "300 Scottsdale Drive", "lat": 43.521779304506055, "lon": -80.24034540099782}, {"address": "302 Scottsdale Drive", "lat": 43.521737349537865, "lon": -80.2403985595441}, {"address": "304 Scottsdale Drive", "lat": 43.521688877858104, "lon": -80.2404534306443}, {"address": "306 Scottsdale Drive", "lat": 43.521638987062296, "lon": -80.24052795299215}, {"address": "308 Scottsdale Drive", "lat": 43.52157588143965, "lon": -80.24085084461083}, {"address": "310 Scottsdale Drive", "lat": 43.521526769967615, "lon": -80.24079664452701}, {"address": "312 Scottsdale Drive", "lat": 43.52150387324786, "lon": -80.24071056261255}, {"address": "314 Scottsdale Drive", "lat": 43.52146785800352, "lon": -80.24064220988934}, {"address": "316 Scottsdale Drive", "lat": 43.52144756268342, "lon": -80.24055615735378}, {"address": "318 Scottsdale Drive", "lat": 43.52142615046775, "lon": -80.24043969796892}, {"address": "320 Scottsdale Drive", "lat": 43.52141381199872, "lon": -80.24032870538055}, {"address": "322 Scottsdale Drive", "lat": 43.521371259487935, "lon": -80.24026564189977}, {"address": "324 Scottsdale Drive", "lat": 43.52131950280714, "lon": -80.24021856459004}, {"address": "221 Scottsdale Drive", "lat": 43.52203727457135, "lon": -80.2431376044071}, {"address": "275 Scottsdale Drive", "lat": 43.52100253985852, "lon": -80.24166219711667}, {"address": "5 Wilsonview Avenue", "lat": 43.522539461275684, "lon": -80.23873312651402}, {"address": "23 Wilsonview Avenue", "lat": 43.522070017499466, "lon": -80.23946190554372}, {"address": "25 Wilsonview Avenue", "lat": 43.522145235133756, "lon": -80.23950210019844}, {"address": "27 Wilsonview Avenue", "lat": 43.522187701305285, "lon": -80.23957946681072}, {"address": "29 Wilsonview Avenue", "lat": 43.522215954211674, "lon": -80.239640579455}, {"address": "31 Wilsonview Avenue", "lat": 43.52225848492485, "lon": -80.23970721971058}, {"address": "33 Wilsonview Avenue", "lat": 43.52231015593014, "lon": -80.23976860019225}, {"address": "35 Wilsonview Avenue", "lat": 43.522620328272176, "lon": -80.24011185574915}, {"address": "37 Wilsonview Avenue", "lat": 43.52258488919713, "lon": -80.24016330129126}, {"address": "39 Wilsonview Avenue", "lat": 43.52256346738542, "lon": -80.24026318213132}, {"address": "41 Wilsonview Avenue", "lat": 43.522513620147826, "lon": -80.24033055300731}, {"address": "43 Wilsonview Avenue", "lat": 43.52248065219849, "lon": -80.24040348197632}, {"address": "45 Wilsonview Avenue", "lat": 43.522441147153565, "lon": -80.24048169984933}, {"address": "47 Wilsonview Avenue", "lat": 43.52240048180514, "lon": -80.24053666168469}, {"address": "49 Wilsonview Avenue", "lat": 43.5223378404271, "lon": -80.24056812749764}, {"address": "51 Wilsonview Avenue", "lat": 43.522098821015256, "lon": -80.2402918392245}, {"address": "53 Wilsonview Avenue", "lat": 43.522044398139194, "lon": -80.24025545738291}, {"address": "55 Wilsonview Avenue", "lat": 43.52200446836556, "lon": -80.2401888474394}, {"address": "57 Wilsonview Avenue", "lat": 43.521975011994876, "lon": -80.24011162915949}, {"address": "59 Wilsonview Avenue", "lat": 43.521789709290395, "lon": -80.2397733797192}, {"address": "61 Wilsonview Avenue", "lat": 43.52176306261656, "lon": -80.23987677480807}, {"address": "63 Wilsonview Avenue", "lat": 43.52171328026018, "lon": -80.23993341988812}, {"address": "65 Wilsonview Avenue", "lat": 43.521668700904556, "lon": -80.23999012329696}, {"address": "67 Wilsonview Avenue", "lat": 43.521622789337414, "lon": -80.24005217645758}, {"address": "69 Wilsonview Avenue", "lat": 43.52156915729773, "lon": -80.24009983670479}, {"address": "21 Wilsonview Avenue", "lat": 43.5220169699025, "lon": -80.23941302564236}, {"address": "377 Edinburgh Road South", "lat": 43.5241751913276, "lon": -80.24037111741184}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 235;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Zone 27 — Ward 5 Canvass</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Header */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(255,255,255,0.96); border-bottom: 1px solid #ddd;
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px;
+  }
+  .header b { color: #1a73e8; }
+  .header .badge { background: #1a73e8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  #counter { font-size: 12px; color: #555; }
+
+  /* Bottom helper */
+  .bottom-hint {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: rgba(0,0,0,0.7); color: white; text-align: center;
+    padding: 10px; font-size: 14px;
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(0,0,0,0.4); display: none;
+  }
+  .modal-bg.active { display: flex; justify-content: center; align-items: stretch; }
+  .modal {
+    background: white; width: 100%; max-width: 520px;
+    display: flex; flex-direction: column;
+    /* Full-height column on mobile, with safe-area padding for iPhone home indicator */
+    height: 100%;
+  }
+  @media (min-width: 600px) {
+    .modal-bg.active { align-items: center; padding: 20px; }
+    .modal { height: auto; max-height: 90vh; border-radius: 12px; }
+  }
+  .modal-body {
+    padding: 16px 16px 8px 16px; overflow-y: auto; flex: 1 1 auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal h2 { margin: 0 0 8px 0; font-size: 16px; }
+  .modal .addr-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .modal .addr-row input { flex: 1; font-size: 16px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+
+  .modal label { display: block; font-size: 13px; color: #444; margin-top: 10px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=tel], .modal textarea {
+    width: 100%; padding: 8px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px;
+  }
+  .modal textarea { min-height: 60px; resize: vertical; }
+
+  /* Status segmented control */
+  .status-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .status-btn {
+    padding: 12px 8px; border: 2px solid #ccc; border-radius: 8px;
+    text-align: center; font-size: 14px; font-weight: 500; cursor: pointer;
+    background: white;
+  }
+  .status-btn.active { color: white; border-color: transparent; }
+  .status-btn[data-val="No Answer"].active    { background: #4a90e2; }
+  .status-btn[data-val="Supporter"].active    { background: #27ae60; }
+  .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
+  .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
+
+  /* Y/N toggle group */
+  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
+  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
+  .yn-cell .yn-buttons { display: flex; gap: 2px; }
+  .yn-cell .yn-buttons button {
+    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
+    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
+  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+
+  /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
+  .actions {
+    display: flex; gap: 8px; padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: white; border-top: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .actions button {
+    flex: 1; padding: 16px; font-size: 17px; border: 0; border-radius: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .actions .btn-cancel { background: #eee; color: #333; }
+  .actions .btn-save { background: #1a73e8; color: white; }
+
+  /* First-time welcome */
+  .welcome-bg {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999;
+    background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+  }
+  .welcome {
+    background: white; border-radius: 12px; padding: 24px; max-width: 360px; width: 90%;
+    text-align: center;
+  }
+  .welcome h2 { margin-top: 0; font-size: 18px; }
+  .welcome input {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px;
+    margin-top: 12px; box-sizing: border-box;
+  }
+  .welcome button {
+    margin-top: 16px; width: 100%; padding: 12px; font-size: 16px; border: 0;
+    border-radius: 8px; background: #1a73e8; color: white; font-weight: 600;
+  }
+
+  /* Hidden in offline mode */
+  #offlineBanner {
+    display: none; position: fixed; top: 36px; left: 0; right: 0; z-index: 998;
+    background: #f39c12; color: white; text-align: center; padding: 4px; font-size: 12px;
+  }
+  #offlineBanner.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><span class="badge">Zone 27</span> &nbsp;<b id="volName">…</b></div>
+  <div id="counter">0 of 142</div>
+</div>
+
+<div id="offlineBanner">⚠️ Offline — entries saved locally, will sync when back online</div>
+
+<div id="map"></div>
+
+<div class="bottom-hint">Tap a house on the map to log a visit</div>
+
+<!-- First-time welcome (asks for volunteer name) -->
+<div id="welcomeBg" class="welcome-bg">
+  <div class="welcome">
+    <h2>👋 Welcome to Ward 5 Canvass</h2>
+    <p style="font-size: 14px; color: #555;">What's your name? (used in the spreadsheet so we know who collected each entry)</p>
+    <input id="welcomeName" type="text" placeholder="Your name" autocomplete="name" />
+    <button onclick="setVolunteer()">Start canvassing</button>
+  </div>
+</div>
+
+<!-- Door entry modal -->
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-body">
+    <h2>Log this door</h2>
+    <label>Address (edit if wrong)</label>
+    <div class="addr-row">
+      <input id="addrInput" type="text" autocomplete="off" />
+    </div>
+
+    <label>Status</label>
+    <div class="status-group">
+      <div class="status-btn" data-val="No Answer">🔵 No Answer</div>
+      <div class="status-btn" data-val="Supporter">🟢 Supporter</div>
+      <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
+      <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
+    </div>
+
+    <label style="margin-top:14px">Other tags</label>
+    <div class="yn-row">
+      <div class="yn-cell">
+        <div class="yn-label">Family?</div>
+        <div class="yn-buttons">
+          <button data-field="family" data-val="Y" class="yes">Y</button>
+          <button data-field="family" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Renter?</div>
+        <div class="yn-buttons">
+          <button data-field="renter" data-val="Y" class="yes">Y</button>
+          <button data-field="renter" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Lawn Sign?</div>
+        <div class="yn-buttons">
+          <button data-field="lawn" data-val="Y" class="yes">Y</button>
+          <button data-field="lawn" data-val="N" class="no">N</button>
+        </div>
+      </div>
+      <div class="yn-cell">
+        <div class="yn-label">Follow-up?</div>
+        <div class="yn-buttons">
+          <button data-field="fu" data-val="Y" class="yes">Y</button>
+          <button data-field="fu" data-val="N" class="no">N</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Name (optional)</label>
+    <input id="nameInput" type="text" autocomplete="off" />
+
+    <label>Email (optional)</label>
+    <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
+
+    <label>Phone (optional)</label>
+    <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" />
+
+    <label>Top issue (optional)</label>
+    <input id="issueInput" type="text" />
+
+    <label>Notes</label>
+    <textarea id="notesInput"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === CONFIG (injected by generator) ===
+const ZONE_NUM = "27";
+const ZONE_NAME = "Zone 27";
+const ZONE_POLYGON = [[43.520547, -80.222729], [43.519141, -80.220698], [43.518833, -80.220203], [43.520413, -80.21797], [43.519357, -80.216395], [43.519545, -80.216147], [43.520249, -80.216115], [43.521391, -80.217733], [43.521547, -80.217819], [43.523188, -80.215246], [43.524401, -80.217533], [43.520547, -80.222729]];   // array of [lat, lon] points
+const ZONE_CENTER = [43.52148268970211, -80.21888972336812];     // [lat, lon]
+const ADDRESSES = [{"address": "3 Birch Street", "lat": 43.52249374481436, "lon": -80.21883339503474}, {"address": "5 Birch Street", "lat": 43.52236955908085, "lon": -80.21911857399631}, {"address": "7 Birch Street", "lat": 43.52223225222705, "lon": -80.21930255370137}, {"address": "9 Birch Street", "lat": 43.52209380563218, "lon": -80.219487001384}, {"address": "11 Birch Street", "lat": 43.52195618517303, "lon": -80.21967366981796}, {"address": "15 Birch Street", "lat": 43.52181836265157, "lon": -80.21985795432472}, {"address": "17 Birch Street", "lat": 43.52168018231929, "lon": -80.22004381654791}, {"address": "19 Birch Street", "lat": 43.52154250983963, "lon": -80.22022840553839}, {"address": "21 Birch Street", "lat": 43.52140531429698, "lon": -80.22041273264414}, {"address": "23 Birch Street", "lat": 43.52126749007951, "lon": -80.22059681334208}, {"address": "25 Birch Street", "lat": 43.52113166505901, "lon": -80.22078203307028}, {"address": "27 Birch Street", "lat": 43.520858768130694, "lon": -80.22096430259403}, {"address": "4 Birch Street", "lat": 43.52193867789252, "lon": -80.21870335687896}, {"address": "6 Birch Street", "lat": 43.52178786426407, "lon": -80.21888598972214}, {"address": "8 Birch Street", "lat": 43.52164993526349, "lon": -80.21907058250916}, {"address": "10 Birch Street", "lat": 43.52151176335262, "lon": -80.21925735908196}, {"address": "12 Birch Street", "lat": 43.52137440766097, "lon": -80.21944503622068}, {"address": "16 Birch Street", "lat": 43.52123641738696, "lon": -80.21963160333527}, {"address": "18 Birch Street", "lat": 43.52109878191046, "lon": -80.21981624091244}, {"address": "20 Birch Street", "lat": 43.520963753903274, "lon": -80.22000459575104}, {"address": "22 Birch Street", "lat": 43.520824133002435, "lon": -80.22019011594406}, {"address": "24 Birch Street", "lat": 43.520686107279474, "lon": -80.22037166507714}, {"address": "1 Columbus Crescent", "lat": 43.51963714361881, "lon": -80.21636177472094}, {"address": "5 Columbus Crescent", "lat": 43.51986227892505, "lon": -80.21672798429279}, {"address": "7 Columbus Crescent", "lat": 43.5199758536362, "lon": -80.21688978170683}, {"address": "9 Columbus Crescent", "lat": 43.520133510032174, "lon": -80.21705709125128}, {"address": "11 Columbus Crescent", "lat": 43.52024952249738, "lon": -80.21721098025796}, {"address": "15 Columbus Crescent", "lat": 43.52036506104942, "lon": -80.21737643287493}, {"address": "17 Columbus Crescent", "lat": 43.52044287527242, "lon": -80.21751952091856}, {"address": "19 Columbus Crescent", "lat": 43.520559680670466, "lon": -80.21767384679347}, {"address": "21 Columbus Crescent", "lat": 43.520711089092934, "lon": -80.21792728686131}, {"address": "23 Columbus Crescent", "lat": 43.520633707546004, "lon": -80.21820703904861}, {"address": "25 Columbus Crescent", "lat": 43.52045415255444, "lon": -80.21836099818051}, {"address": "27 Columbus Crescent", "lat": 43.52031567376786, "lon": -80.21855132286018}, {"address": "29 Columbus Crescent", "lat": 43.52017819252039, "lon": -80.21873666830186}, {"address": "31 Columbus Crescent", "lat": 43.52004117596105, "lon": -80.21891982793191}, {"address": "33 Columbus Crescent", "lat": 43.51990236421067, "lon": -80.21910478176177}, {"address": "35 Columbus Crescent", "lat": 43.51976133817465, "lon": -80.21929503313476}, {"address": "37 Columbus Crescent", "lat": 43.519631097824806, "lon": -80.21947141257415}, {"address": "39 Columbus Crescent", "lat": 43.51951359145591, "lon": -80.21962780992628}, {"address": "41 Columbus Crescent", "lat": 43.51939353075592, "lon": -80.21978809017158}, {"address": "43 Columbus Crescent", "lat": 43.519272447575304, "lon": -80.21994463506982}, {"address": "45 Columbus Crescent", "lat": 43.51916245495295, "lon": -80.22009409134549}, {"address": "3 Karen Avenue", "lat": 43.521680176581704, "lon": -80.21841181978122}, {"address": "5 Karen Avenue", "lat": 43.52149527920178, "lon": -80.21860979050912}, {"address": "7 Karen Avenue", "lat": 43.52135488212587, "lon": -80.21880024662009}, {"address": "9 Karen Avenue", "lat": 43.52121064818703, "lon": -80.21899586663739}, {"address": "11 Karen Avenue", "lat": 43.52106472527787, "lon": -80.21919262360754}, {"address": "15 Karen Avenue", "lat": 43.52092173979306, "lon": -80.2193876205741}, {"address": "17 Karen Avenue", "lat": 43.52077948808302, "lon": -80.21958199713623}, {"address": "19 Karen Avenue", "lat": 43.520636236782195, "lon": -80.21977587710688}, {"address": "21 Karen Avenue", "lat": 43.520493061201506, "lon": -80.21997021423972}, {"address": "27 Karen Avenue", "lat": 43.520345245376035, "lon": -80.22019253360301}, {"address": "31 Karen Avenue", "lat": 43.520542244372315, "lon": -80.22056808733812}, {"address": "37 Karen Avenue", "lat": 43.5209752132309, "lon": -80.22115524461782}, {"address": "4 Karen Avenue", "lat": 43.52109319491336, "lon": -80.2181290870368}, {"address": "6 Karen Avenue", "lat": 43.520960007396056, "lon": -80.21830571264704}, {"address": "8 Karen Avenue", "lat": 43.52082347345581, "lon": -80.21849469492523}, {"address": "10 Karen Avenue", "lat": 43.520682405560464, "lon": -80.2186839390223}, {"address": "14 Karen Avenue", "lat": 43.52054490796797, "lon": -80.21887232569966}, {"address": "16 Karen Avenue", "lat": 43.520407265369755, "lon": -80.21906101653974}, {"address": "18 Karen Avenue", "lat": 43.520269643948936, "lon": -80.21924758047172}, {"address": "20 Karen Avenue", "lat": 43.52013201687204, "lon": -80.2194332292223}, {"address": "22 Karen Avenue", "lat": 43.519993024892756, "lon": -80.2196189429738}, {"address": "24 Karen Avenue", "lat": 43.51980352636077, "lon": -80.21978067984794}, {"address": "26 Karen Avenue", "lat": 43.519677068960426, "lon": -80.22011163767924}, {"address": "28 Karen Avenue", "lat": 43.51984843115371, "lon": -80.22050287007907}, {"address": "30 Karen Avenue", "lat": 43.52001765154876, "lon": -80.22069880818685}, {"address": "32 Karen Avenue", "lat": 43.52014619258319, "lon": -80.22093297417018}, {"address": "34 Karen Avenue", "lat": 43.520270394212105, "lon": -80.22116360245455}, {"address": "36 Karen Avenue", "lat": 43.52039479214506, "lon": -80.22139073115282}, {"address": "38 Karen Avenue", "lat": 43.520526245174146, "lon": -80.22164098168672}, {"address": "40 Karen Avenue", "lat": 43.52068270614113, "lon": -80.2218538133223}, {"address": "42 Karen Avenue", "lat": 43.52082343491222, "lon": -80.22205280658495}, {"address": "1 Kron Drive", "lat": 43.51997523905614, "lon": -80.21635051539181}, {"address": "3 Kron Drive", "lat": 43.51982344708136, "lon": -80.21635227589914}, {"address": "2 Oak Street", "lat": 43.52415970710173, "lon": -80.21754329146434}, {"address": "4 Oak Street", "lat": 43.52404349463985, "lon": -80.21768889232047}, {"address": "6 Oak Street", "lat": 43.52392568336657, "lon": -80.21781864449572}, {"address": "10 Oak Street", "lat": 43.52325314665649, "lon": -80.21860362584097}, {"address": "14 Oak Street", "lat": 43.52309732800746, "lon": -80.21886878984213}, {"address": "16 Oak Street", "lat": 43.52292339156488, "lon": -80.21905172409406}, {"address": "18 Oak Street", "lat": 43.522769054682314, "lon": -80.21925857844673}, {"address": "22 Oak Street", "lat": 43.52262052925818, "lon": -80.21945785816055}, {"address": "24 Oak Street", "lat": 43.52247759631685, "lon": -80.21964966392632}, {"address": "26 Oak Street", "lat": 43.52233995278651, "lon": -80.21983298880406}, {"address": "28 Oak Street", "lat": 43.522202694800484, "lon": -80.22001888907809}, {"address": "30 Oak Street", "lat": 43.52206432274026, "lon": -80.22020374117423}, {"address": "32 Oak Street", "lat": 43.5219261404763, "lon": -80.22038940170299}, {"address": "34 Oak Street", "lat": 43.52178820972896, "lon": -80.22057409421954}, {"address": "36 Oak Street", "lat": 43.521650939315386, "lon": -80.22075821809459}, {"address": "38 Oak Street", "lat": 43.52151362630451, "lon": -80.22094168463055}, {"address": "40 Oak Street", "lat": 43.52137669973804, "lon": -80.22112773023677}, {"address": "42 Oak Street", "lat": 43.52123707184915, "lon": -80.22131249070151}, {"address": "44 Oak Street", "lat": 43.521094365243485, "lon": -80.22150560131324}, {"address": "50 Oak Street", "lat": 43.52058040304073, "lon": -80.22239129344145}, {"address": "4 Renfrew Place", "lat": 43.52328722037285, "lon": -80.21759547739842}, {"address": "6 Renfrew Place", "lat": 43.52344795277595, "lon": -80.21737680609105}, {"address": "8 Renfrew Place", "lat": 43.52357399885755, "lon": -80.21716144555506}, {"address": "10 Renfrew Place", "lat": 43.523637070373915, "lon": -80.21688673028828}, {"address": "12 Renfrew Place", "lat": 43.523598875421115, "lon": -80.21658312686485}, {"address": "14 Renfrew Place", "lat": 43.52342636239398, "lon": -80.21633174439765}, {"address": "16 Renfrew Place", "lat": 43.523309818337836, "lon": -80.21608918897587}, {"address": "18 Renfrew Place", "lat": 43.523151742022826, "lon": -80.21587095427591}, {"address": "20 Renfrew Place", "lat": 43.522892221801, "lon": -80.21597170705103}, {"address": "3 Renfrew Place", "lat": 43.52268062553632, "lon": -80.21796696980113}, {"address": "5 Renfrew Place", "lat": 43.52267900261317, "lon": -80.21765946531461}, {"address": "7 Renfrew Place", "lat": 43.52276573519204, "lon": -80.21740282421754}, {"address": "9 Renfrew Place", "lat": 43.52293691660133, "lon": -80.21717349503639}, {"address": "11 Renfrew Place", "lat": 43.52314990694711, "lon": -80.21689711686352}, {"address": "15 Renfrew Place", "lat": 43.52295960883085, "lon": -80.21657389140232}, {"address": "17 Renfrew Place", "lat": 43.52281425903089, "lon": -80.21630677901588}, {"address": "38 Rickson Avenue", "lat": 43.52044750213953, "lon": -80.22220446429958}, {"address": "40 Rickson Avenue", "lat": 43.52030877156099, "lon": -80.22201710086864}, {"address": "42 Rickson Avenue", "lat": 43.52018668787026, "lon": -80.22180489361229}, {"address": "44 Rickson Avenue", "lat": 43.52006515544023, "lon": -80.22160322233589}, {"address": "46 Rickson Avenue", "lat": 43.51994364870371, "lon": -80.22139440214701}, {"address": "48 Rickson Avenue", "lat": 43.51982068182948, "lon": -80.22118793644393}, {"address": "50 Rickson Avenue", "lat": 43.51969830084649, "lon": -80.22098095549073}, {"address": "52 Rickson Avenue", "lat": 43.519577801285436, "lon": -80.22077620806408}, {"address": "54 Rickson Avenue", "lat": 43.519457528158505, "lon": -80.22056801131467}, {"address": "56 Rickson Avenue", "lat": 43.51933771069898, "lon": -80.22035314400269}, {"address": "60 Rickson Avenue", "lat": 43.519070139092285, "lon": -80.2202452434715}, {"address": "2 Yewholme Drive", "lat": 43.52356318126944, "lon": -80.21824949465619}, {"address": "4 Yewholme Drive", "lat": 43.52345832440946, "lon": -80.21809793473822}, {"address": "10 Yewholme Drive", "lat": 43.523208694535505, "lon": -80.21796134482732}, {"address": "20 Yewholme Drive", "lat": 43.521985219103826, "lon": -80.21775367447476}, {"address": "9 Yewholme Drive", "lat": 43.52292756038362, "lon": -80.21857148811982}, {"address": "11 Yewholme Drive", "lat": 43.52270177844586, "lon": -80.2187395821497}, {"address": "19 Yewholme Drive", "lat": 43.522017092829856, "lon": -80.21850979852924}, {"address": "27 Yewholme Drive", "lat": 43.52123137559733, "lon": -80.21794372958742}, {"address": "29 Yewholme Drive", "lat": 43.52104070315781, "lon": -80.21766998831247}, {"address": "31 Yewholme Drive", "lat": 43.5209345154591, "lon": -80.21751814969706}, {"address": "33 Yewholme Drive", "lat": 43.52083453673272, "lon": -80.21737905044866}, {"address": "35 Yewholme Drive", "lat": 43.520737877749916, "lon": -80.21723995946888}, {"address": "37 Yewholme Drive", "lat": 43.52063917799527, "lon": -80.21709912342014}, {"address": "39 Yewholme Drive", "lat": 43.520538433615414, "lon": -80.2169559806141}, {"address": "41 Yewholme Drive", "lat": 43.52043898815027, "lon": -80.2168139895445}, {"address": "43 Yewholme Drive", "lat": 43.520340514895985, "lon": -80.21667395994147}, {"address": "45 Yewholme Drive", "lat": 43.52024287970926, "lon": -80.21653786462734}, {"address": "47 Yewholme Drive", "lat": 43.52013664341921, "lon": -80.21639846969421}, {"address": "8 Oak Street", "lat": 43.52379759172103, "lon": -80.21800814688626}];
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9tKK-OmdB3LXvmyPepDBLKcMpkD6m9FkQiNJOHzWsjBDwgOtm2bXIaNIHYRFtWok9dQ/exec";
+const TOTAL_DOORS = 142;
+
+// === Volunteer setup ===
+let volunteer = localStorage.getItem("ward5_volunteer") || "";
+if (volunteer) {
+  document.getElementById("volName").textContent = volunteer;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+function setVolunteer() {
+  const name = document.getElementById("welcomeName").value.trim();
+  if (!name) { alert("Please enter your name"); return; }
+  volunteer = name;
+  localStorage.setItem("ward5_volunteer", name);
+  document.getElementById("volName").textContent = name;
+  document.getElementById("welcomeBg").style.display = "none";
+}
+
+// === Map ===
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(ZONE_CENTER, 16);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+// Zone polygon (actual hand-drawn shape)
+const zonePoly = L.polygon(ZONE_POLYGON, { color: "#1a73e8", weight: 3, fillOpacity: 0.08 }).addTo(map);
+map.fitBounds(zonePoly.getBounds(), { padding: [40, 40] });
+
+// GPS dot
+let gpsMarker = null;
+let gpsAccuracy = null;
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    if (!gpsMarker) {
+      gpsMarker = L.circleMarker([latitude, longitude], {
+        radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1
+      }).addTo(map);
+      gpsAccuracy = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.1, weight: 1 }).addTo(map);
+    } else {
+      gpsMarker.setLatLng([latitude, longitude]);
+      gpsAccuracy.setLatLng([latitude, longitude]).setRadius(accuracy);
+    }
+  }, (err) => { console.warn("GPS error", err); }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// === Status colors ===
+const STATUS_COLORS = {
+  "No Answer": "#4a90e2",
+  "Supporter": "#27ae60",
+  "Not Supporter": "#e74c3c",
+  "Undecided": "#f1c40f",
+};
+
+// === Persisted entries (per-device, color pins on map even before sync) ===
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(`ward5_entries_z${ZONE_NUM}`) || "[]"); }
+  catch { return []; }
+}
+function saveEntries(arr) {
+  localStorage.setItem(`ward5_entries_z${ZONE_NUM}`, JSON.stringify(arr));
+}
+const entries = loadEntries();
+function updateCounter() {
+  document.getElementById("counter").textContent = `${entries.length} of ${TOTAL_DOORS}`;
+}
+updateCounter();
+
+// Render existing pins
+function renderPin(entry) {
+  const color = STATUS_COLORS[entry.status] || "#888";
+  L.circleMarker([entry.lat, entry.lon], {
+    radius: 6, color: "white", weight: 2, fillColor: color, fillOpacity: 0.9
+  }).addTo(map).bindPopup(`<b>${entry.address}</b><br>${entry.status}<br><i>${entry.volunteer}</i>`);
+}
+entries.forEach(renderPin);
+
+// === Nearest address lookup ===
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+// === Tap-anywhere → open form ===
+let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const { lat, lng } = e.latlng;
+  const nearest = nearestAddress(lat, lng);
+  tapLat = nearest.lat; tapLon = nearest.lon;
+  document.getElementById("addrInput").value = nearest.address;
+  // Reset form
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  tags = {family:null, renter:null, lawn:null, fu:null};
+  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
+  ["nameInput","emailInput","phoneInput","issueInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modalBg").classList.add("active");
+});
+
+// Status buttons
+document.querySelectorAll(".status-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    statusVal = b.dataset.val;
+  };
+});
+
+// Y/N buttons
+document.querySelectorAll(".yn-buttons button").forEach(b => {
+  b.onclick = () => {
+    const field = b.dataset.field;
+    const val = b.dataset.val;
+    // Clear sibling
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    tags[field] = val;
+  };
+});
+
+function closeModal() {
+  document.getElementById("modalBg").classList.remove("active");
+}
+
+function saveEntry() {
+  if (!statusVal) { alert("Please pick a status"); return; }
+  const entry = {
+    timestamp: new Date().toISOString(),
+    volunteer,
+    zone: ZONE_NAME,
+    address: document.getElementById("addrInput").value.trim(),
+    status: statusVal,
+    family: tags.family || "",
+    renter: tags.renter || "",
+    lawn: tags.lawn || "",
+    fu: tags.fu || "",
+    name: document.getElementById("nameInput").value.trim(),
+    email: document.getElementById("emailInput").value.trim(),
+    phone: document.getElementById("phoneInput").value.trim(),
+    issue: document.getElementById("issueInput").value.trim(),
+    notes: document.getElementById("notesInput").value.trim(),
+    lat: tapLat, lon: tapLon,
+    _synced: false,
+  };
+  entries.push(entry);
+  saveEntries(entries);
+  renderPin(entry);
+  updateCounter();
+  closeModal();
+  syncQueue();
+}
+
+// === Sync queue (POST to Apps Script) ===
+async function syncQueue() {
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]._synced) continue;
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(entries[i]),
+        // Apps Script requires text/plain to avoid CORS preflight
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+      });
+      entries[i]._synced = true;
+      saveEntries(entries);
+    } catch (err) {
+      console.warn("Sync failed", err);
+      break;
+    }
+  }
+}
+window.addEventListener("online",  () => { document.getElementById("offlineBanner").classList.remove("active"); syncQueue(); });
+window.addEventListener("offline", () => { document.getElementById("offlineBanner").classList.add("active"); });
+syncQueue();
+
+// Periodic sync attempt every 30s in case POST failed earlier
+setInterval(syncQueue, 30000);
+</script>
+</body>
+</html>
