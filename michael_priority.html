@@ -237,7 +237,8 @@ function renderAddressPins() {
     const prior = (entriesByAddress[key] || []).filter(e => (e.volunteer || "").toLowerCase() === volunteer.toLowerCase());
     let marker;
     if (prior.length === 0) {
-      marker = L.circleMarker([a.lat, a.lon], { radius: 3, color: "#999", fill: true, fillOpacity: 0.4, weight: 0 });
+      // bigger, more tappable grey dot
+      marker = L.circleMarker([a.lat, a.lon], { radius: 5, color: "#666", fillColor: "#aaa", fill: true, fillOpacity: 0.7, weight: 1 });
     } else if (prior.length === 1) {
       marker = L.marker([a.lat, a.lon], { icon: makeStar("#f1c40f") });
       visited1++;
@@ -246,11 +247,29 @@ function renderAddressPins() {
       visited2++;
     }
     marker.addTo(map);
-    marker.on("click", () => openDoor(a));
+    marker.on("click", (e) => { L.DomEvent.stopPropagation(e); openDoor(a); });
     addressMarkers[key] = marker;
   });
   document.getElementById("stats").textContent = `${visited1 + visited2} / ${TOTAL_DOORS} visited · ${visited2} second visits`;
 }
+
+// Tap-anywhere: find nearest address to tap point (same as zone PWA)
+function nearestAddress(lat, lon) {
+  let best = null, bestD = Infinity;
+  for (const a of ADDRESSES) {
+    const dlat = (a.lat - lat) * 111000;
+    const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
+    const d = dlat * dlat + dlon * dlon;
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  return best;
+}
+
+map.on("click", (e) => {
+  if (!volunteer) return;
+  const nearest = nearestAddress(e.latlng.lat, e.latlng.lng);
+  if (nearest) openDoor(nearest);
+});
 
 async function refreshEntries() {
   if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") { renderAddressPins(); return; }
