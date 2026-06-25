@@ -72,13 +72,16 @@
   .status-btn[data-val="Not Supporter"].active { background: #e74c3c; }
   .status-btn[data-val="Undecided"].active { background: #f1c40f; color: #333; }
 
-  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
-  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
-  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
-  .yn-cell .yn-buttons { display: flex; gap: 2px; }
-  .yn-cell .yn-buttons button { flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
-  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
-  .yn-cell .yn-buttons button.active.no { background: #95a5a6; color: white; border-color: #95a5a6; }
+  /* Switch toggles for Y/N tags */
+  .switch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .switch-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; }
+  .switch-item .switch-label { font-size: 14px; font-weight: 500; color: #333; }
+  .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #bbb; transition: 0.2s; border-radius: 26px; }
+  .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; transition: 0.2s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+  .switch input:checked + .slider { background: #27ae60; }
+  .switch input:checked + .slider:before { transform: translateX(20px); }
 
   .actions {
     display: flex; gap: 8px; padding: 12px 16px;
@@ -141,12 +144,24 @@
         <div class="status-btn" data-val="Not Supporter">🔴 Not Supporter</div>
         <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
       </div>
-      <label style="margin-top:14px">Other tags</label>
-      <div class="yn-row">
-        <div class="yn-cell"><div class="yn-label">Family?</div><div class="yn-buttons"><button data-field="family" data-val="Y" class="yes">Y</button><button data-field="family" data-val="N" class="no">N</button></div></div>
-        <div class="yn-cell"><div class="yn-label">Renter?</div><div class="yn-buttons"><button data-field="renter" data-val="Y" class="yes">Y</button><button data-field="renter" data-val="N" class="no">N</button></div></div>
-        <div class="yn-cell"><div class="yn-label">Lawn Sign?</div><div class="yn-buttons"><button data-field="lawn" data-val="Y" class="yes">Y</button><button data-field="lawn" data-val="N" class="no">N</button></div></div>
-        <div class="yn-cell"><div class="yn-label">Follow-up?</div><div class="yn-buttons"><button data-field="fu" data-val="Y" class="yes">Y</button><button data-field="fu" data-val="N" class="no">N</button></div></div>
+      <label style="margin-top:14px">Tags (toggle on if Yes)</label>
+      <div class="switch-grid">
+        <div class="switch-item">
+          <span class="switch-label">Family</span>
+          <label class="switch"><input type="checkbox" id="familySwitch"><span class="slider"></span></label>
+        </div>
+        <div class="switch-item">
+          <span class="switch-label">Renter</span>
+          <label class="switch"><input type="checkbox" id="renterSwitch"><span class="slider"></span></label>
+        </div>
+        <div class="switch-item">
+          <span class="switch-label">🪧 Lawn sign</span>
+          <label class="switch"><input type="checkbox" id="lawnSwitch"><span class="slider"></span></label>
+        </div>
+        <div class="switch-item">
+          <span class="switch-label">📞 Follow-up</span>
+          <label class="switch"><input type="checkbox" id="fuSwitch"><span class="slider"></span></label>
+        </div>
       </div>
       <label>Name (optional)</label>
       <input id="nameInput" type="text" autocomplete="off" />
@@ -154,9 +169,41 @@
       <input id="emailInput" type="email" inputmode="email" autocomplete="off" />
       <label>Phone (optional)</label>
       <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off" placeholder="(519) 555-1234" oninput="formatPhone(this)" />
-      <label>Top issue (optional)</label>
-      <select id="issueSelect" onchange="onIssueChange()">
-        <option value="">— Select an issue —</option>
+      <label>Top issues (up to 3)</label>
+      <select class="issueSelect" id="issueSelect1" onchange="onIssueChange()">
+        <option value="">— First issue —</option>
+        <option>Transit / Bus service</option>
+        <option>Cycling / Walkability</option>
+        <option>Housing / Affordability</option>
+        <option>Childcare / Daycare</option>
+        <option>Property taxes</option>
+        <option>Roads / Snow removal</option>
+        <option>Garbage / Recycling</option>
+        <option>Parks / Recreation</option>
+        <option>Safety / Crime</option>
+        <option>Development / Zoning</option>
+        <option>Climate / Environment</option>
+        <option>Community / Neighbourhood</option>
+        <option value="Other">Other (type below)</option>
+      </select>
+      <select class="issueSelect" id="issueSelect2" onchange="onIssueChange()" style="margin-top:6px;">
+        <option value="">— Second issue (optional) —</option>
+        <option>Transit / Bus service</option>
+        <option>Cycling / Walkability</option>
+        <option>Housing / Affordability</option>
+        <option>Childcare / Daycare</option>
+        <option>Property taxes</option>
+        <option>Roads / Snow removal</option>
+        <option>Garbage / Recycling</option>
+        <option>Parks / Recreation</option>
+        <option>Safety / Crime</option>
+        <option>Development / Zoning</option>
+        <option>Climate / Environment</option>
+        <option>Community / Neighbourhood</option>
+        <option value="Other">Other (type below)</option>
+      </select>
+      <select class="issueSelect" id="issueSelect3" onchange="onIssueChange()" style="margin-top:6px;">
+        <option value="">— Third issue (optional) —</option>
         <option>Transit / Bus service</option>
         <option>Cycling / Walkability</option>
         <option>Housing / Affordability</option>
@@ -245,13 +292,15 @@ const STATUS_LABEL = {
   "No Answer":      "🔵 No Answer (try again — different time)",
 };
 
-function makeStar(color, withRing) {
-  // Star icon for 2+ visits — same color logic
+function makeStar(color, visits, withRing) {
   const ringStyle = withRing ? "border:2px solid black; border-radius:50%; padding:1px; background:white;" : "";
+  const badge = visits > 1
+    ? `<span style="position:absolute; top:-4px; right:-6px; background:#c0392b; color:white; font-size:9px; font-weight:700; padding:1px 4px; border-radius:8px; line-height:1.2; box-shadow:0 1px 2px rgba(0,0,0,0.3);">${visits}</span>`
+    : "";
   return L.divIcon({
     className: "starpin",
-    html: `<div style="${ringStyle}"><div style="font-size:20px; line-height:1; color:${color}; text-shadow:0 0 2px white,0 0 2px white,0 0 2px white;">★</div></div>`,
-    iconSize: [22, 22], iconAnchor: [11, 11]
+    html: `<div style="${ringStyle} position:relative; display:inline-block;"><div style="font-size:20px; line-height:1; color:${color}; text-shadow:0 0 2px white,0 0 2px white,0 0 2px white;">★</div>${badge}</div>`,
+    iconSize: [26, 26], iconAnchor: [11, 11]
   });
 }
 
@@ -279,8 +328,8 @@ function renderAddressPins() {
       const color = STATUS_COLOR[latest.status] || "#888";
 
       if (myPrior.length >= 2) {
-        // Michael's pass 2 done — big star
-        marker = L.marker([a.lat, a.lon], { icon: makeStar(color, hasLawnSign) });
+        // Michael's pass 2+ done — colored star with visit-count badge
+        marker = L.marker([a.lat, a.lon], { icon: makeStar(color, myPrior.length, hasLawnSign) });
         visited2++;
       } else {
         // 1 visit (his or anyone's) — colored circle, with black border if lawn sign requested
@@ -342,21 +391,23 @@ async function refreshEntries() {
 }
 
 // === Form state ===
-let currentAddr = null, statusVal = null, tags = { family: null, renter: null, lawn: null, fu: null };
+let currentAddr = null, statusVal = null;
+
+function resetForm() {
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  ["familySwitch","renterSwitch","lawnSwitch","fuSwitch"].forEach(id => document.getElementById(id).checked = false);
+  ["nameInput","emailInput","phoneInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  ["issueSelect1","issueSelect2","issueSelect3"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("issueOtherInput").value = "";
+  document.getElementById("issueOtherInput").style.display = "none";
+}
 
 function openDoor(a) {
   if (!volunteer) return;
   currentAddr = a;
   document.getElementById("addrInput").value = a.address;
-  // Reset form
-  statusVal = null;
-  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
-  tags = { family: null, renter: null, lawn: null, fu: null };
-  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
-  ["nameInput","emailInput","phoneInput","notesInput"].forEach(id => document.getElementById(id).value = "");
-  document.getElementById("issueSelect").value = "";
-  document.getElementById("issueOtherInput").value = "";
-  document.getElementById("issueOtherInput").style.display = "none";
+  resetForm();
 
   // Check for prior visits (any volunteer)
   const key = a.address.toLowerCase().trim();
@@ -383,27 +434,32 @@ function openDoor(a) {
     document.getElementById("nameInput").value = last.name || "";
     document.getElementById("emailInput").value = last.email || "";
     document.getElementById("phoneInput").value = last.phone || "";
-    // Pre-fill status
     if (last.status) {
       const btn = document.querySelector(`.status-btn[data-val="${last.status}"]`);
       if (btn) { btn.classList.add("active"); statusVal = last.status; }
     }
-    // Pre-fill Y/N
-    ["family","renter","lawn","fu"].forEach(f => {
-      if (last[f]) {
-        const b = document.querySelector(`.yn-buttons button[data-field="${f}"][data-val="${last[f]}"]`);
-        if (b) { b.classList.add("active"); tags[f] = last[f]; }
-      }
-    });
-    // Pre-fill issue
+    // Pre-fill switches (Y → on)
+    document.getElementById("familySwitch").checked = (last.family === "Y");
+    document.getElementById("renterSwitch").checked = (last.renter === "Y");
+    document.getElementById("lawnSwitch").checked = (last.lawn === "Y");
+    document.getElementById("fuSwitch").checked = (last.fu === "Y");
+    // Pre-fill issues — split comma-separated string into up to 3 slots
     if (last.issue) {
-      const sel = document.getElementById("issueSelect");
-      const opts = Array.from(sel.options).map(o => o.value || o.textContent);
-      if (opts.includes(last.issue)) sel.value = last.issue;
-      else {
-        sel.value = "Other";
+      const issueList = last.issue.split(",").map(s => s.trim()).filter(Boolean);
+      const selects = ["issueSelect1","issueSelect2","issueSelect3"].map(id => document.getElementById(id));
+      let otherText = "";
+      issueList.slice(0, 3).forEach((iss, idx) => {
+        const opts = Array.from(selects[idx].options).map(o => o.value || o.textContent);
+        if (opts.includes(iss)) {
+          selects[idx].value = iss;
+        } else {
+          selects[idx].value = "Other";
+          otherText = iss;
+        }
+      });
+      if (otherText) {
         document.getElementById("issueOtherInput").style.display = "block";
-        document.getElementById("issueOtherInput").value = last.issue;
+        document.getElementById("issueOtherInput").value = otherText;
       }
     }
     // Notes stays blank (new conversation)
@@ -415,7 +471,6 @@ function openDoor(a) {
 }
 
 document.querySelectorAll(".status-btn").forEach(b => { b.onclick = () => { document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active")); b.classList.add("active"); statusVal = b.dataset.val; }; });
-document.querySelectorAll(".yn-buttons button").forEach(b => { b.onclick = () => { b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active")); b.classList.add("active"); tags[b.dataset.field] = b.dataset.val; }; });
 
 function closeModal() { document.getElementById("modalBg").classList.remove("active"); }
 
@@ -427,8 +482,8 @@ function formatPhone(input) {
   else input.value = "(" + d.slice(0,3) + ") " + d.slice(3,6) + "-" + d.slice(6);
 }
 function onIssueChange() {
-  const sel = document.getElementById("issueSelect");
-  document.getElementById("issueOtherInput").style.display = (sel.value === "Other") ? "block" : "none";
+  const anyOther = ["issueSelect1","issueSelect2","issueSelect3"].some(id => document.getElementById(id).value === "Other");
+  document.getElementById("issueOtherInput").style.display = anyOther ? "block" : "none";
 }
 
 async function saveEntry() {
@@ -437,9 +492,13 @@ async function saveEntry() {
   if (emailVal && !emailVal.includes("@")) {
     if (!confirm("That email is missing an @ symbol. Save anyway?")) return;
   }
-  const issueSel = document.getElementById("issueSelect").value;
-  const issueOther = document.getElementById("issueOtherInput").value.trim();
-  const issueVal = (issueSel === "Other") ? issueOther : issueSel;
+  // Resolve up to 3 issues, with "Other" → otherInput text
+  const otherTxt = document.getElementById("issueOtherInput").value.trim();
+  const issues = ["issueSelect1","issueSelect2","issueSelect3"]
+    .map(id => document.getElementById(id).value)
+    .map(v => v === "Other" ? otherTxt : v)
+    .filter(v => v);
+  const issueVal = issues.join(", ");
 
   const entry = {
     timestamp: new Date().toISOString(),
@@ -447,7 +506,10 @@ async function saveEntry() {
     zone: "Priority",
     address: document.getElementById("addrInput").value.trim(),
     status: statusVal,
-    family: tags.family || "", renter: tags.renter || "", lawn: tags.lawn || "", fu: tags.fu || "",
+    family: document.getElementById("familySwitch").checked ? "Y" : "",
+    renter: document.getElementById("renterSwitch").checked ? "Y" : "",
+    lawn:   document.getElementById("lawnSwitch").checked   ? "Y" : "",
+    fu:     document.getElementById("fuSwitch").checked     ? "Y" : "",
     name: document.getElementById("nameInput").value.trim(),
     email: emailVal,
     phone: document.getElementById("phoneInput").value.trim(),

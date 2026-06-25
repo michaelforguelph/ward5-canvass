@@ -74,17 +74,16 @@
   .status-btn[data-val="Not Supporter"].active{ background: #e74c3c; }
   .status-btn[data-val="Undecided"].active    { background: #f1c40f; color: #333; }
 
-  /* Y/N toggle group */
-  .yn-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
-  .yn-cell { display: flex; flex-direction: column; gap: 4px; }
-  .yn-cell .yn-label { font-size: 11px; color: #555; text-align: center; }
-  .yn-cell .yn-buttons { display: flex; gap: 2px; }
-  .yn-cell .yn-buttons button {
-    flex: 1; padding: 8px 4px; border: 2px solid #ccc; background: white;
-    border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
-  }
-  .yn-cell .yn-buttons button.active.yes { background: #27ae60; color: white; border-color: #27ae60; }
-  .yn-cell .yn-buttons button.active.no  { background: #95a5a6; color: white; border-color: #95a5a6; }
+  /* Switch toggles for Y/N tags */
+  .switch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .switch-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; }
+  .switch-item .switch-label { font-size: 14px; font-weight: 500; color: #333; }
+  .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #bbb; transition: 0.2s; border-radius: 26px; }
+  .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; transition: 0.2s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+  .switch input:checked + .slider { background: #27ae60; }
+  .switch input:checked + .slider:before { transform: translateX(20px); }
 
   /* Actions — pinned at bottom of modal, ALWAYS visible. Accounts for iPhone safe area */
   .actions {
@@ -168,35 +167,23 @@
       <div class="status-btn" data-val="Undecided">🟡 Undecided</div>
     </div>
 
-    <label style="margin-top:14px">Other tags</label>
-    <div class="yn-row">
-      <div class="yn-cell">
-        <div class="yn-label">Family?</div>
-        <div class="yn-buttons">
-          <button data-field="family" data-val="Y" class="yes">Y</button>
-          <button data-field="family" data-val="N" class="no">N</button>
-        </div>
+    <label style="margin-top:14px">Tags (toggle on if Yes)</label>
+    <div class="switch-grid">
+      <div class="switch-item">
+        <span class="switch-label">Family</span>
+        <label class="switch"><input type="checkbox" id="familySwitch"><span class="slider"></span></label>
       </div>
-      <div class="yn-cell">
-        <div class="yn-label">Renter?</div>
-        <div class="yn-buttons">
-          <button data-field="renter" data-val="Y" class="yes">Y</button>
-          <button data-field="renter" data-val="N" class="no">N</button>
-        </div>
+      <div class="switch-item">
+        <span class="switch-label">Renter</span>
+        <label class="switch"><input type="checkbox" id="renterSwitch"><span class="slider"></span></label>
       </div>
-      <div class="yn-cell">
-        <div class="yn-label">Lawn Sign?</div>
-        <div class="yn-buttons">
-          <button data-field="lawn" data-val="Y" class="yes">Y</button>
-          <button data-field="lawn" data-val="N" class="no">N</button>
-        </div>
+      <div class="switch-item">
+        <span class="switch-label">🪧 Lawn sign</span>
+        <label class="switch"><input type="checkbox" id="lawnSwitch"><span class="slider"></span></label>
       </div>
-      <div class="yn-cell">
-        <div class="yn-label">Follow-up?</div>
-        <div class="yn-buttons">
-          <button data-field="fu" data-val="Y" class="yes">Y</button>
-          <button data-field="fu" data-val="N" class="no">N</button>
-        </div>
+      <div class="switch-item">
+        <span class="switch-label">📞 Follow-up</span>
+        <label class="switch"><input type="checkbox" id="fuSwitch"><span class="slider"></span></label>
       </div>
     </div>
 
@@ -210,21 +197,35 @@
     <input id="phoneInput" type="tel" inputmode="tel" autocomplete="off"
            placeholder="(519) 555-1234" oninput="formatPhone(this)" />
 
-    <label>Top issue (optional)</label>
-    <select id="issueSelect" onchange="onIssueChange()">
-      <option value="">— Select an issue —</option>
-      <option>Transit / Bus service</option>
-      <option>Cycling / Walkability</option>
-      <option>Housing / Affordability</option>
-      <option>Childcare / Daycare</option>
-      <option>Property taxes</option>
-      <option>Roads / Snow removal</option>
-      <option>Garbage / Recycling</option>
-      <option>Parks / Recreation</option>
-      <option>Safety / Crime</option>
-      <option>Development / Zoning</option>
-      <option>Climate / Environment</option>
-      <option>Community / Neighbourhood</option>
+    <label>Top issues (up to 3)</label>
+    <select class="issueSelect" id="issueSelect1" onchange="onIssueChange()">
+      <option value="">— First issue —</option>
+      <option>Transit / Bus service</option><option>Cycling / Walkability</option>
+      <option>Housing / Affordability</option><option>Childcare / Daycare</option>
+      <option>Property taxes</option><option>Roads / Snow removal</option>
+      <option>Garbage / Recycling</option><option>Parks / Recreation</option>
+      <option>Safety / Crime</option><option>Development / Zoning</option>
+      <option>Climate / Environment</option><option>Community / Neighbourhood</option>
+      <option value="Other">Other (type below)</option>
+    </select>
+    <select class="issueSelect" id="issueSelect2" onchange="onIssueChange()" style="margin-top:6px;">
+      <option value="">— Second issue (optional) —</option>
+      <option>Transit / Bus service</option><option>Cycling / Walkability</option>
+      <option>Housing / Affordability</option><option>Childcare / Daycare</option>
+      <option>Property taxes</option><option>Roads / Snow removal</option>
+      <option>Garbage / Recycling</option><option>Parks / Recreation</option>
+      <option>Safety / Crime</option><option>Development / Zoning</option>
+      <option>Climate / Environment</option><option>Community / Neighbourhood</option>
+      <option value="Other">Other (type below)</option>
+    </select>
+    <select class="issueSelect" id="issueSelect3" onchange="onIssueChange()" style="margin-top:6px;">
+      <option value="">— Third issue (optional) —</option>
+      <option>Transit / Bus service</option><option>Cycling / Walkability</option>
+      <option>Housing / Affordability</option><option>Childcare / Daycare</option>
+      <option>Property taxes</option><option>Roads / Snow removal</option>
+      <option>Garbage / Recycling</option><option>Parks / Recreation</option>
+      <option>Safety / Crime</option><option>Development / Zoning</option>
+      <option>Climate / Environment</option><option>Community / Neighbourhood</option>
       <option value="Other">Other (type below)</option>
     </select>
     <input id="issueOtherInput" type="text" placeholder="Specify other issue…"
@@ -335,7 +336,17 @@ function nearestAddress(lat, lon) {
 }
 
 // === Tap-anywhere → open form ===
-let tapLat = null, tapLon = null, statusVal = null, tags = {family:null, renter:null, lawn:null, fu:null};
+let tapLat = null, tapLon = null, statusVal = null;
+
+function resetForm() {
+  statusVal = null;
+  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
+  ["familySwitch","renterSwitch","lawnSwitch","fuSwitch"].forEach(id => document.getElementById(id).checked = false);
+  ["nameInput","emailInput","phoneInput","notesInput"].forEach(id => document.getElementById(id).value = "");
+  ["issueSelect1","issueSelect2","issueSelect3"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("issueOtherInput").value = "";
+  document.getElementById("issueOtherInput").style.display = "none";
+}
 
 map.on("click", (e) => {
   if (!volunteer) return;
@@ -343,15 +354,7 @@ map.on("click", (e) => {
   const nearest = nearestAddress(lat, lng);
   tapLat = nearest.lat; tapLon = nearest.lon;
   document.getElementById("addrInput").value = nearest.address;
-  // Reset form
-  statusVal = null;
-  document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
-  tags = {family:null, renter:null, lawn:null, fu:null};
-  document.querySelectorAll(".yn-buttons button").forEach(b => b.classList.remove("active"));
-  ["nameInput","emailInput","phoneInput","notesInput"].forEach(id => document.getElementById(id).value = "");
-  document.getElementById("issueSelect").value = "";
-  document.getElementById("issueOtherInput").value = "";
-  document.getElementById("issueOtherInput").style.display = "none";
+  resetForm();
   document.getElementById("modalBg").classList.add("active");
 });
 
@@ -361,18 +364,6 @@ document.querySelectorAll(".status-btn").forEach(b => {
     document.querySelectorAll(".status-btn").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
     statusVal = b.dataset.val;
-  };
-});
-
-// Y/N buttons
-document.querySelectorAll(".yn-buttons button").forEach(b => {
-  b.onclick = () => {
-    const field = b.dataset.field;
-    const val = b.dataset.val;
-    // Clear sibling
-    b.parentElement.querySelectorAll("button").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    tags[field] = val;
   };
 });
 
@@ -389,34 +380,35 @@ function formatPhone(input) {
 }
 
 function onIssueChange() {
-  const sel = document.getElementById("issueSelect");
-  const other = document.getElementById("issueOtherInput");
-  other.style.display = (sel.value === "Other") ? "block" : "none";
+  const anyOther = ["issueSelect1","issueSelect2","issueSelect3"].some(id => document.getElementById(id).value === "Other");
+  document.getElementById("issueOtherInput").style.display = anyOther ? "block" : "none";
 }
 
 function saveEntry() {
   if (!statusVal) { alert("Please pick a status"); return; }
-  // Email warning (soft — let them save anyway)
   const emailVal = document.getElementById("emailInput").value.trim();
   if (emailVal && !emailVal.includes("@")) {
     if (!confirm("That email is missing an @ symbol. Save anyway?")) return;
   }
-  // Resolve issue (dropdown OR "Other" text)
-  const issueSel = document.getElementById("issueSelect").value;
-  const issueOther = document.getElementById("issueOtherInput").value.trim();
-  const issueVal = (issueSel === "Other") ? issueOther : issueSel;
+  // Resolve up to 3 issues
+  const otherTxt = document.getElementById("issueOtherInput").value.trim();
+  const issues = ["issueSelect1","issueSelect2","issueSelect3"]
+    .map(id => document.getElementById(id).value)
+    .map(v => v === "Other" ? otherTxt : v)
+    .filter(v => v);
+  const issueVal = issues.join(", ");
   const entry = {
     timestamp: new Date().toISOString(),
     volunteer,
     zone: ZONE_NAME,
     address: document.getElementById("addrInput").value.trim(),
     status: statusVal,
-    family: tags.family || "",
-    renter: tags.renter || "",
-    lawn: tags.lawn || "",
-    fu: tags.fu || "",
+    family: document.getElementById("familySwitch").checked ? "Y" : "",
+    renter: document.getElementById("renterSwitch").checked ? "Y" : "",
+    lawn:   document.getElementById("lawnSwitch").checked   ? "Y" : "",
+    fu:     document.getElementById("fuSwitch").checked     ? "Y" : "",
     name: document.getElementById("nameInput").value.trim(),
-    email: document.getElementById("emailInput").value.trim(),
+    email: emailVal,
     phone: document.getElementById("phoneInput").value.trim(),
     issue: issueVal,
     notes: document.getElementById("notesInput").value.trim(),
