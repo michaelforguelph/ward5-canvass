@@ -211,6 +211,11 @@
       <div id="formMode" style="display:none">
         <h2 id="formTitle">Log this door</h2>
         <div id="priorCard" style="display:none"></div>
+
+        <label>Pick the right address (5 nearest)</label>
+        <select id="nearestSelect" onchange="onNearestChange()" style="background:#fff8e1;">
+        </select>
+
         <label>Address (edit if wrong)</label>
         <input id="addrInput" type="text" autocomplete="off" />
 
@@ -375,15 +380,18 @@ let currentFilter = "all";
 
 // === Lookup helpers ===
 function nearestAddress(lat, lon) {
-  let best = null, bestD = Infinity;
-  for (const a of ADDRESSES) {
+  return nearestAddresses(lat, lon, 1)[0] || null;
+}
+function nearestAddresses(lat, lon, n) {
+  const scored = ADDRESSES.map(a => {
     const dlat = (a.lat - lat) * 111000;
     const dlon = (a.lon - lon) * 111000 * Math.cos(lat * Math.PI / 180);
-    const d = dlat * dlat + dlon * dlon;
-    if (d < bestD) { bestD = d; best = a; }
-  }
-  return best;
+    return { ...a, d: Math.sqrt(dlat*dlat + dlon*dlon) };
+  });
+  scored.sort((a, b) => a.d - b.d);
+  return scored.slice(0, n);
 }
+let lastTapNearest = [];   // last computed top-N for tap-anywhere flow
 const addressIndex = {};   // normalized address -> {lat, lon}
 ADDRESSES.forEach(a => { addressIndex[(a.address || "").toLowerCase().trim()] = a; });
 function lookupAddressCoords(address) {
@@ -524,8 +532,8 @@ document.querySelectorAll(".filter-btn").forEach(b => {
 // === Tap anywhere → open address ===
 map.on("click", (e) => {
   if (!volunteer) return;
-  const nearest = nearestAddress(e.latlng.lat, e.latlng.lng);
-  if (nearest) openAddress(nearest.address);
+  lastTapNearest = nearestAddresses(e.latlng.lat, e.latlng.lng, 5);
+  if (lastTapNearest.length) openAddress(lastTapNearest[0].address);
 });
 
 // === Modal state ===
@@ -557,8 +565,13 @@ function showViewMode(address, prior) {
   prior.forEach((e, idx) => {
     const date = (e.timestamp || "").slice(0, 10) || "?";
     const summary = e.conv_summary || e.conversationSummary || "";
+    const editKey = (e.timestamp || "") + "|" + (e.address || "");
     html += `<div class="view-card">
-      <h3>Visit ${prior.length - idx} · ${date} · by ${e.volunteer || "?"}</h3>
+      <h3 style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Visit ${prior.length - idx} · ${date} · by ${e.volunteer || "?"}</span>
+        <button onclick="deleteEntry(${JSON.stringify(editKey).replace(/"/g, '&quot;')})"
+                style="background:#fdecea; color:#c0392b; border:1px solid #e74c3c; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer;">🗑️ Delete</button>
+      </h3>
       ${e.status ? `<div class="row"><b>Status:</b> ${e.status}</div>` : ""}
       ${e.name ? `<div class="row"><b>Name:</b> ${e.name}</div>` : ""}
       ${e.email ? `<div class="row"><b>Email:</b> ${e.email}</div>` : ""}
@@ -596,6 +609,7 @@ function showFormMode(address, editingFrom, prefillFromPrior) {
   // Reset everything
   document.getElementById("addrInput").value = address;
   resetForm();
+  populateNearestDropdown(address);
 
   let toPrefill = null;
   if (editingFrom) {
@@ -667,6 +681,75 @@ function fillFormFromEntry(e, blankNotesAndStatus) {
 function closeModal() {
   document.getElementById("modalBg").classList.remove("active");
   editingEntry = null;
+}
+
+// Populate the "5 nearest" dropdown for the form
+function populateNearestDropdown(currentAddress) {
+  const sel = document.getElementById("nearestSelect");
+  let candidates = lastTapNearest && lastTapNearest.length ? lastTapNearest : [];
+  // If empty (e.g. opened from a map pin click, not a tap-anywhere), compute around the current address
+  if (!candidates.length) {
+    const a = lookupAddressCoords(currentAddress);
+    if (a) candidates = nearestAddresses(a.lat, a.lon, 5);
+  }
+  // Ensure the current address is in the list
+  if (candidates.length && !candidates.find(c => c.address === currentAddress)) {
+    const a = lookupAddressCoords(currentAddress);
+    if (a) candidates.unshift({ ...a, d: 0 });
+  }
+  sel.innerHTML = "";
+  candidates.slice(0, 5).forEach(c => {
+    const key = (c.address || "").toLowerCase().trim();
+    const visits = (entriesByAddress[key] || []).length;
+    const visitsLabel = visits > 0 ? `  ✓ ${visits}×` : "";
+    const distLabel = (c.d != null) ? `${Math.round(c.d)}m` : "";
+    const opt = document.createElement("option");
+    opt.value = c.address;
+    opt.textContent = `${c.address}${distLabel ? "  (" + distLabel + ")" : ""}${visitsLabel}`;
+    if (c.address === currentAddress) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// User picks a different address from the dropdown — switch the form
+function onNearestChange() {
+  const newAddr = document.getElementById("nearestSelect").value;
+  if (!newAddr) return;
+  document.getElementById("addrInput").value = newAddr;
+  const a = lookupAddressCoords(newAddr);
+  if (a) currentAddrLatLon = [a.lat, a.lon];
+  // If the picked address has a prior visit, pre-fill from it
+  const key = newAddr.toLowerCase().trim();
+  const prior = entriesByAddress[key] || [];
+  if (prior.length > 0 && !editingEntry) fillFormFromEntry(prior[0], true);
+}
+
+// Delete an entry (with confirmation)
+async function deleteEntry(editKey) {
+  if (!confirm("Delete this visit? This can't be undone.")) return;
+  // Remove locally first
+  const [ts, addr] = editKey.split("|");
+  const key = (addr || "").toLowerCase().trim();
+  const arr = entriesByAddress[key] || [];
+  const idx = arr.findIndex(e => (e.timestamp || "") === ts && (e.address || "") === addr);
+  if (idx >= 0) arr.splice(idx, 1);
+  if (arr.length === 0) delete entriesByAddress[key];
+  const gi = allEntries.findIndex(e => (e.timestamp || "") === ts && (e.address || "") === addr);
+  if (gi >= 0) allEntries.splice(gi, 1);
+  renderPins();
+  closeModal();
+
+  // Tell the backend
+  if (APPS_SCRIPT_URL === "REPLACE_WITH_APPS_SCRIPT_URL") return;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "delete", _editKey: editKey }),
+      headers: { "Content-Type": "text/plain;charset=utf-8" }
+    });
+  } catch (err) {
+    console.warn("Delete failed (will sync on next refresh)", err);
+  }
 }
 
 // Status buttons
