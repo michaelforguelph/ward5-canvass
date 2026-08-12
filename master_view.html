@@ -164,10 +164,13 @@
   <button class="filter-btn" data-filter="Supporter">🟢 Supporter <span class="count" id="c-sup">0</span></button>
   <button class="filter-btn" data-filter="Not Supporter">🔴 Not Supporter <span class="count" id="c-not">0</span></button>
   <button class="filter-btn" data-filter="Undecided">🟡 Undecided <span class="count" id="c-und">0</span></button>
+  <button class="filter-btn" data-filter="supporter-no-contact">🎯 Supporter: No Contact Info <span class="count" id="c-nocontact">0</span></button>
+  <button class="filter-btn" data-filter="sign-extremely">💜 Sign: Extremely Possible <span class="count" id="c-sign-extremely">0</span></button>
   <button class="filter-btn" data-filter="sign-possible">🩶 Sign: Possible <span class="count" id="c-sign-possible">0</span></button>
   <button class="filter-btn" data-filter="sign-confirmed">🟧 Sign: Confirmed <span class="count" id="c-sign-confirmed">0</span></button>
   <button class="filter-btn" data-filter="sign-placed">🟩 Sign: Placed <span class="count" id="c-sign-placed">0</span></button>
   <button class="filter-btn" data-filter="sign-removed">⬜ Sign: Removed <span class="count" id="c-sign-removed">0</span></button>
+  <button class="filter-btn" data-filter="sign-notdiscussed">◻️ Sign: Not Yet Discussed <span class="count" id="c-sign-notdiscussed">0</span></button>
   <button class="filter-btn" data-filter="senior">👴 Seniors <span class="count" id="c-snr">0</span></button>
   <button class="filter-btn" data-filter="student">🎓 Students <span class="count" id="c-stu">0</span></button>
   <button class="filter-btn" data-filter="family">👨‍👩‍👧 Families <span class="count" id="c-fam">0</span></button>
@@ -183,6 +186,7 @@
   <div><span class="dot" style="background:#e74c3c; border:1px solid white;"></span> Not Supp. (skip)</div>
   <div><span class="dot" style="background:#4a90e2; border:1px solid white;"></span> No Answer (retry)</div>
   <div><span style="color:#27ae60; font-size:14px; margin-right:2px;">★</span> Visited 2×+</div>
+  <div><span class="dot" style="background:#888; border:2px solid #8e44ad;"></span> 🪧 Sign: Extremely Possible</div>
   <div><span class="dot" style="background:#888; border:2px solid #888;"></span> 🪧 Sign: Possible</div>
   <div><span class="dot" style="background:#888; border:2px solid #e67e22;"></span> 🪧 Sign: Confirmed</div>
   <div><span class="dot" style="background:#888; border:2px solid #27ae60;"></span> 🪧 Sign: Placed</div>
@@ -243,6 +247,8 @@
         <label style="margin-top:14px">Sign status</label>
         <select id="signStatusSelect">
           <option value="">— Not identified —</option>
+          <option value="Not Yet Discussed">Not Yet Discussed (no sign conversation yet)</option>
+          <option value="Extremely Possible">Extremely Possible (keen — revisit)</option>
           <option value="Possible">Possible (from conversation)</option>
           <option value="Confirmed">Confirmed (not yet placed)</option>
           <option value="Placed">Placed (in the ground)</option>
@@ -382,7 +388,7 @@ function renderPins() {
   Object.values(addressMarkers).forEach(m => map.removeLayer(m));
   for (const k in addressMarkers) delete addressMarkers[k];
 
-  const counts = { all: 0, NA: 0, sup: 0, not: 0, und: 0, sign_possible: 0, sign_confirmed: 0, sign_placed: 0, sign_removed: 0, snr: 0, stu: 0, fam: 0, adult: 0 };
+  const counts = { all: 0, NA: 0, sup: 0, not: 0, und: 0, nocontact: 0, sign_extremely: 0, sign_possible: 0, sign_confirmed: 0, sign_placed: 0, sign_removed: 0, sign_notdiscussed: 0, snr: 0, stu: 0, fam: 0, adult: 0 };
 
   // Each entry → place pin if it has coords (or address lookup works)
   // Group by address so multiple visits coalesce into one pin
@@ -405,15 +411,27 @@ function renderPins() {
     const hasStudent = entries.some(e => e.demographic === "Student");
     const hasFamily = entries.some(e => e.demographic === "Family" || e.family === "Y");
     const hasAdultHousehold = entries.some(e => e.demographic === "Adult Household");
+    // Supporter, no email/phone on file yet, still only one visit, and no sign
+    // commitment logged — this is Michael's "go back and try for a sign" list.
+    // Resolves itself the moment ANY of these happen: contact info gets
+    // captured, Sign Status becomes Confirmed/Placed, or a second visit gets
+    // logged at all (regardless of outcome) — no separate tracking field needed.
+    const needsContact = latest.status === "Supporter"
+      && entries.length < 2
+      && !entries.some(e => e.email || e.phone)
+      && signStage !== "Confirmed" && signStage !== "Placed";
     counts.all++;
     if (latest.status === "No Answer") counts.NA++;
     if (latest.status === "Supporter") counts.sup++;
     if (latest.status === "Not Supporter") counts.not++;
     if (latest.status === "Undecided") counts.und++;
+    if (needsContact) counts.nocontact++;
+    if (signStage === "Extremely Possible") counts.sign_extremely++;
     if (signStage === "Possible") counts.sign_possible++;
     if (signStage === "Confirmed") counts.sign_confirmed++;
     if (signStage === "Placed") counts.sign_placed++;
     if (signStage === "Removed") counts.sign_removed++;
+    if (signStage === "Not Yet Discussed") counts.sign_notdiscussed++;
     if (hasSenior) counts.snr++;
     if (hasStudent) counts.stu++;
     if (hasFamily) counts.fam++;
@@ -425,10 +443,13 @@ function renderPins() {
     if (currentFilter === "Supporter"     && latest.status === "Supporter") show = true;
     if (currentFilter === "Not Supporter" && latest.status === "Not Supporter") show = true;
     if (currentFilter === "Undecided"     && latest.status === "Undecided") show = true;
+    if (currentFilter === "supporter-no-contact" && needsContact) show = true;
+    if (currentFilter === "sign-extremely" && signStage === "Extremely Possible") show = true;
     if (currentFilter === "sign-possible"  && signStage === "Possible") show = true;
     if (currentFilter === "sign-confirmed" && signStage === "Confirmed") show = true;
     if (currentFilter === "sign-placed"    && signStage === "Placed") show = true;
     if (currentFilter === "sign-removed"   && signStage === "Removed") show = true;
+    if (currentFilter === "sign-notdiscussed" && signStage === "Not Yet Discussed") show = true;
     if (currentFilter === "senior"        && hasSenior) show = true;
     if (currentFilter === "student"       && hasStudent) show = true;
     if (currentFilter === "family"        && hasFamily) show = true;
@@ -437,7 +458,9 @@ function renderPins() {
 
     const color = STATUS_COLOR[latest.status] || "#888";
     const myVisits = entries.filter(e => (e.volunteer || "").toLowerCase() === volunteer.toLowerCase()).length;
-    const SIGN_RING_COLOR = { "Possible": "#888", "Confirmed": "#e67e22", "Placed": "#27ae60" };
+    // "Not Yet Discussed" deliberately has no ring — it means no sign conversation
+    // has happened, which is the same visual as a blank sign status.
+    const SIGN_RING_COLOR = { "Extremely Possible": "#8e44ad", "Possible": "#888", "Confirmed": "#e67e22", "Placed": "#27ae60" };
     const ringColor = SIGN_RING_COLOR[signStage] || null;
 
     let marker;
@@ -461,10 +484,13 @@ function renderPins() {
   document.getElementById("c-sup").textContent = counts.sup;
   document.getElementById("c-not").textContent = counts.not;
   document.getElementById("c-und").textContent = counts.und;
+  document.getElementById("c-nocontact").textContent = counts.nocontact;
+  document.getElementById("c-sign-extremely").textContent = counts.sign_extremely;
   document.getElementById("c-sign-possible").textContent = counts.sign_possible;
   document.getElementById("c-sign-confirmed").textContent = counts.sign_confirmed;
   document.getElementById("c-sign-placed").textContent = counts.sign_placed;
   document.getElementById("c-sign-removed").textContent = counts.sign_removed;
+  document.getElementById("c-sign-notdiscussed").textContent = counts.sign_notdiscussed;
   document.getElementById("c-snr").textContent = counts.snr;
   document.getElementById("c-stu").textContent = counts.stu;
   document.getElementById("c-fam").textContent = counts.fam;
@@ -741,7 +767,7 @@ async function saveEntry() {
     demographic: document.getElementById("demoSelect").value || "",
     renter: editingEntry ? (editingEntry.renter || "") : "",
     sign_status: document.getElementById("signStatusSelect").value || "",
-    lawn_probable: ["Possible","Confirmed","Placed"].includes(document.getElementById("signStatusSelect").value) ? "Y" : "",
+    lawn_probable: ["Extremely Possible","Possible","Confirmed","Placed"].includes(document.getElementById("signStatusSelect").value) ? "Y" : "",
     lawn_confirmed: ["Confirmed","Placed"].includes(document.getElementById("signStatusSelect").value) ? "Y" : "",
     fu: editingEntry ? (editingEntry.fu || "") : "",
     name: document.getElementById("nameInput").value.trim(),
