@@ -30,6 +30,37 @@
     padding: 8px; font-size: 12px;
   }
 
+  /* "You are here" marker — pulsing halo so it stands out from the
+     No Answer pins, which are a very similar blue. */
+  .me-pin { position: relative; width: 22px; height: 22px; }
+  .me-pin .me-dot {
+    position: absolute; left: 2px; top: 2px; width: 18px; height: 18px;
+    box-sizing: border-box; border-radius: 50%;
+    background: #ff1493; border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  }
+  .me-pin .me-pulse {
+    position: absolute; left: 2px; top: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #ff1493;
+    animation: mePulse 1.8s ease-out infinite;
+  }
+  @keyframes mePulse {
+    0%   { transform: scale(0.7); opacity: 0.65; }
+    70%  { opacity: 0; }
+    100% { transform: scale(3.4); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .me-pin .me-pulse { animation: none; opacity: 0.35; transform: scale(2.2); }
+  }
+
+  /* Find me */
+  #findMe {
+    position: fixed; bottom: 50px; right: 58px; z-index: 999;
+    background: #ff1493; color: white; border: 0; border-radius: 50%;
+    width: 40px; height: 40px; font-size: 19px; line-height: 1; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
   /* Legend (closeable) */
   #legendToggle {
     position: fixed; bottom: 50px; right: 10px; z-index: 999;
@@ -177,6 +208,7 @@
   <button class="filter-btn" data-filter="adult" data-filter-key="adult">🏠 Adult Household <span class="count" id="c-adult">0</span></button>
 </div>
 
+<button id="findMe" onclick="recenterOnMe()" title="Find me">◎</button>
 <button id="legendToggle" onclick="document.getElementById('legend').classList.toggle('open')" title="Legend">?</button>
 <div id="legend">
   <b>Legend</b>
@@ -185,6 +217,7 @@
   <div><span class="dot" style="background:#f1c40f; border:1px solid white;"></span> Undecided (priority)</div>
   <div><span class="dot" style="background:#e74c3c; border:1px solid white;"></span> Not Supp. (skip)</div>
   <div><span class="dot" style="background:#4a90e2; border:1px solid white;"></span> No Answer (retry)</div>
+  <div><span class="dot" style="background:#ff1493; border:2px solid white;"></span> You are here</div>
   <div><span style="color:#27ae60; font-size:14px; margin-right:2px;">★</span> Visited 2×+</div>
   <div><span class="dot" style="background:#888; border:2px solid #8e44ad;"></span> 🪧 Sign: Extremely Possible</div>
   <div><span class="dot" style="background:#888; border:2px solid #888;"></span> 🪧 Sign: Possible</div>
@@ -324,19 +357,38 @@ STATIONS.forEach(s => {
   }).addTo(map);
 });
 
-// GPS live dot
+// GPS live dot — pulsing so it reads as "me" rather than another blue pin
+let myLatLng = null;      // latest fix, used by the Find me button
+let geoDenied = false;
+const ME_ICON = L.divIcon({
+  className: "me-pin",
+  html: '<div class="me-pulse"></div><div class="me-dot"></div>',
+  iconSize: [22, 22], iconAnchor: [11, 11]
+});
 if (navigator.geolocation) {
   let m=null, c=null;
   navigator.geolocation.watchPosition(pos => {
     const { latitude, longitude, accuracy } = pos.coords;
+    myLatLng = [latitude, longitude];
+    geoDenied = false;
     if (!m) {
-      m = L.circleMarker([latitude, longitude], { radius: 9, color: "white", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(map);
-      c = L.circle([latitude, longitude], { radius: accuracy, color: "#1a73e8", fillOpacity: 0.08, weight: 1 }).addTo(map);
+      // zIndexOffset keeps "me" drawn on top of nearby door pins
+      m = L.marker(myLatLng, { icon: ME_ICON, zIndexOffset: 1000, interactive: false }).addTo(map);
+      c = L.circle(myLatLng, { radius: accuracy, color: "#ff1493", fillOpacity: 0.08, weight: 1, interactive: false }).addTo(map);
     } else {
-      m.setLatLng([latitude, longitude]);
-      c.setLatLng([latitude, longitude]).setRadius(accuracy);
+      m.setLatLng(myLatLng);
+      c.setLatLng(myLatLng).setRadius(accuracy);
     }
-  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000 });
+  }, err => {
+    if (err && err.code === 1) geoDenied = true;   // permission denied
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+function recenterOnMe() {
+  if (!navigator.geolocation) { alert("This device doesn't support location."); return; }
+  if (geoDenied) { alert("Location is blocked for this page.\n\nEnable it in your browser's site settings, then reload."); return; }
+  if (!myLatLng) { alert("Still getting your location — give it a few seconds and try again."); return; }
+  map.setView(myLatLng, Math.max(map.getZoom(), 18), { animate: true });
 }
 
 // === State ===
