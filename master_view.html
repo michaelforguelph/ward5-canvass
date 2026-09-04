@@ -106,8 +106,29 @@
     background: rgba(255,255,255,0.97); padding: 10px 12px; border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.2); font-size: 12px;
     max-width: 230px; display: none;
+    /* Scroll inside the panel rather than running off the bottom of a phone
+       screen — leaves room for the header above and the hint bar below. */
+    max-height: calc(100vh - 110px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;   /* don't scroll/zoom the map underneath */
   }
   #filterPanel.open { display: block; }
+  /* Collapsible group heading. Tapping toggles .open on the section. */
+  #filterPanel .filter-group {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: #888;
+    margin: 10px 0 4px; padding: 3px 0 4px; border-bottom: 1px solid #e4e4e4;
+    position: sticky; top: -10px; background: #fff; z-index: 1;
+    cursor: pointer; user-select: none;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #filterPanel .filter-group:first-of-type { margin-top: 6px; }
+  #filterPanel .filter-group .chev { font-size: 9px; transition: transform 0.15s; }
+  #filterPanel .filter-section.open > .filter-group .chev { transform: rotate(90deg); }
+  /* Collapsed by default; only the section carrying .open shows its buttons. */
+  #filterPanel .filter-section > .group-body { display: none; }
+  #filterPanel .filter-section.open > .group-body { display: block; }
+  /* Count of active-but-hidden pins isn't shown; keep headings quiet instead. */
   #filterPanel .filter-btn {
     display: block; width: 100%; text-align: left; padding: 5px 8px;
     border: 1px solid #ccc; background: white; border-radius: 4px;
@@ -207,24 +228,44 @@
 <button id="filterToggle" onclick="document.getElementById('filterPanel').classList.toggle('open')">≡ Filters</button>
 <div id="filterPanel">
   <button class="filter-btn active" data-filter="all">All entries <span class="count" id="c-all">0</span></button>
-  <button class="filter-btn" data-filter="No Answer">🔵 No Answer <span class="count" id="c-na">0</span></button>
-  <button class="filter-btn" data-filter="Supporter">🟢 Supporter <span class="count" id="c-sup">0</span></button>
-  <button class="filter-btn" data-filter="Not Supporter">🔴 Not Supporter <span class="count" id="c-not">0</span></button>
-  <button class="filter-btn" data-filter="Undecided">🟡 Undecided <span class="count" id="c-und">0</span></button>
-  <button class="filter-btn" data-filter="supporter-no-contact">🎯 Supporter: No Contact Info <span class="count" id="c-nocontact">0</span></button>
-  <button class="filter-btn" data-filter="sign-extremely">💜 Sign: Extremely Possible <span class="count" id="c-sign-extremely">0</span></button>
-  <button class="filter-btn" data-filter="sign-possible">🩶 Sign: Possible <span class="count" id="c-sign-possible">0</span></button>
-  <button class="filter-btn" data-filter="sign-confirmed">🟧 Sign: Confirmed <span class="count" id="c-sign-confirmed">0</span></button>
-  <button class="filter-btn" data-filter="sign-placed">🟩 Sign: Placed <span class="count" id="c-sign-placed">0</span></button>
-  <button class="filter-btn" data-filter="sign-removed">⬜ Sign: Removed <span class="count" id="c-sign-removed">0</span></button>
-  <button class="filter-btn" data-filter="sign-notdiscussed">◻️ Sign: Not Yet Discussed <span class="count" id="c-sign-notdiscussed">0</span></button>
-  <button class="filter-btn" data-filter="signpin-out">🚩 Sign Pins: Out <span class="count" id="c-signpin-out">0</span></button>
-  <button class="filter-btn" data-filter="signpin-collected">✅ Sign Pins: Collected <span class="count" id="c-signpin-collected">0</span></button>
-  <button class="filter-btn" data-filter="senior">👴 Seniors <span class="count" id="c-snr">0</span></button>
-  <button class="filter-btn" data-filter="student">🎓 Students <span class="count" id="c-stu">0</span></button>
-  <button class="filter-btn" data-filter="family">👨‍👩‍👧 Families <span class="count" id="c-fam">0</span></button>
-  <button class="filter-btn" data-filter="adult" data-filter-key="adult">🏠 Adult Household <span class="count" id="c-adult">0</span></button>
-  <button class="filter-btn" data-filter="italian">🇮🇹 Italian <span class="count" id="c-italian">0</span></button>
+  <div class="filter-section open">
+    <div class="filter-group" onclick="toggleFilterGroup(this)">Resident status<span class="chev">▶</span></div>
+    <div class="group-body">
+      <button class="filter-btn" data-filter="No Answer">🔵 No Answer <span class="count" id="c-na">0</span></button>
+      <button class="filter-btn" data-filter="Supporter">🟢 Supporter <span class="count" id="c-sup">0</span></button>
+      <button class="filter-btn" data-filter="Not Supporter">🔴 Not Supporter <span class="count" id="c-not">0</span></button>
+      <button class="filter-btn" data-filter="Undecided">🟡 Undecided <span class="count" id="c-und">0</span></button>
+      <button class="filter-btn" data-filter="supporter-no-contact">🎯 Supporter: No Contact Info <span class="count" id="c-nocontact">0</span></button>
+    </div>
+  </div>
+  <div class="filter-section">
+    <div class="filter-group" onclick="toggleFilterGroup(this)">Lawn signs<span class="chev">▶</span></div>
+    <div class="group-body">
+      <button class="filter-btn" data-filter="sign-extremely">💜 Sign: Extremely Possible <span class="count" id="c-sign-extremely">0</span></button>
+      <button class="filter-btn" data-filter="sign-possible">🩶 Sign: Possible <span class="count" id="c-sign-possible">0</span></button>
+      <button class="filter-btn" data-filter="sign-confirmed">🟧 Sign: Confirmed <span class="count" id="c-sign-confirmed">0</span></button>
+      <button class="filter-btn" data-filter="sign-placed">🟩 Sign: Placed <span class="count" id="c-sign-placed">0</span></button>
+      <button class="filter-btn" data-filter="sign-removed">⬜ Sign: Removed <span class="count" id="c-sign-removed">0</span></button>
+      <button class="filter-btn" data-filter="sign-notdiscussed">◻️ Sign: Not Yet Discussed <span class="count" id="c-sign-notdiscussed">0</span></button>
+    </div>
+  </div>
+  <div class="filter-section">
+    <div class="filter-group" onclick="toggleFilterGroup(this)">Sign pins<span class="chev">▶</span></div>
+    <div class="group-body">
+      <button class="filter-btn" data-filter="signpin-out">🚩 Sign Pins: Out <span class="count" id="c-signpin-out">0</span></button>
+      <button class="filter-btn" data-filter="signpin-collected">✅ Sign Pins: Collected <span class="count" id="c-signpin-collected">0</span></button>
+    </div>
+  </div>
+  <div class="filter-section">
+    <div class="filter-group" onclick="toggleFilterGroup(this)">Household<span class="chev">▶</span></div>
+    <div class="group-body">
+      <button class="filter-btn" data-filter="senior">👴 Seniors <span class="count" id="c-snr">0</span></button>
+      <button class="filter-btn" data-filter="student">🎓 Students <span class="count" id="c-stu">0</span></button>
+      <button class="filter-btn" data-filter="family">👨‍👩‍👧 Families <span class="count" id="c-fam">0</span></button>
+      <button class="filter-btn" data-filter="adult" data-filter-key="adult">🏠 Adult Household <span class="count" id="c-adult">0</span></button>
+      <button class="filter-btn" data-filter="italian">🇮🇹 Italian <span class="count" id="c-italian">0</span></button>
+    </div>
+  </div>
 </div>
 
 <button id="findMe" onclick="recenterOnMe()" title="Find me">◎</button>
@@ -669,11 +710,24 @@ async function refreshEntries() {
 }
 
 // === Filters ===
+function toggleFilterGroup(el) {
+  el.parentElement.classList.toggle("open");
+}
+
+// Keep the chosen filter visible: if a filter is set from elsewhere, make sure
+// its section is expanded rather than silently collapsed.
+function revealActiveFilter() {
+  const active = document.querySelector("#filterPanel .filter-btn.active");
+  const section = active && active.closest(".filter-section");
+  if (section) section.classList.add("open");
+}
+
 document.querySelectorAll(".filter-btn").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".filter-btn").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
     currentFilter = b.dataset.filter;
+    revealActiveFilter();
     renderPins();
   };
 });
