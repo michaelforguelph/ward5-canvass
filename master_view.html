@@ -228,6 +228,9 @@
 <button id="filterToggle" onclick="document.getElementById('filterPanel').classList.toggle('open')">≡ Filters</button>
 <div id="filterPanel">
   <button class="filter-btn active" data-filter="all">All entries <span class="count" id="c-all">0</span></button>
+  <div id="filterChosen" onclick="activeFilters.clear(); syncFilterButtons(); renderPins();"
+       style="display:none; margin:4px 0 2px; padding:4px 8px; font-size:11px; color:#1a73e8;
+              background:#eaf1fd; border-radius:4px; cursor:pointer; text-align:center;"></div>
   <div class="filter-section open">
     <div class="filter-group" onclick="toggleFilterGroup(this)">Resident status<span class="chev">▶</span></div>
     <div class="group-body">
@@ -476,7 +479,37 @@ function recenterOnMe() {
 let allEntries = [];
 let entriesByAddress = {};   // addr key -> sorted newest-first
 const addressMarkers = {};
-let currentFilter = "all";
+// Filters are multi-select. Within a group the selected filters are OR'd
+// (Supporter + Undecided = either); across groups they're AND'd (adding Italian
+// narrows to the Italian ones). Empty set = show everything.
+let activeFilters = new Set();
+const FILTER_GROUPS = {
+  "No Answer": "status", "Supporter": "status", "Not Supporter": "status",
+  "Undecided": "status", "supporter-no-contact": "status",
+  "sign-extremely": "sign", "sign-possible": "sign", "sign-confirmed": "sign",
+  "sign-placed": "sign", "sign-removed": "sign", "sign-notdiscussed": "sign",
+  "signpin-out": "signpin", "signpin-collected": "signpin",
+  "senior": "household", "student": "household", "family": "household",
+  "adult": "household",
+  // Italian is its own axis, not a demographic — keeping it in its own group
+  // means Supporter + Senior + Italian narrows to Italian seniors rather than
+  // reading as "senior OR Italian".
+  "italian": "italian"
+};
+
+// `matches` maps filter key -> whether this pin satisfies it. Door pins never
+// match the signpin group and sign pins never match anything else, so choosing
+// a door filter correctly hides boulevard pins and vice versa.
+function passesFilters(matches) {
+  if (activeFilters.size === 0) return true;
+  const byGroup = {};
+  activeFilters.forEach(k => {
+    const g = FILTER_GROUPS[k] || "other";
+    if (!byGroup[g]) byGroup[g] = [];
+    byGroup[g].push(k);
+  });
+  return Object.keys(byGroup).every(g => byGroup[g].some(k => !!matches[k]));
+}
 
 // === Lookup helpers ===
 function nearestAddress(lat, lon) {
@@ -568,10 +601,7 @@ function renderPins() {
       counts.all++;
       if (collected) counts.signpin_collected++; else counts.signpin_out++;
 
-      let showPin = currentFilter === "all";
-      if (currentFilter === "signpin-out"       && !collected) showPin = true;
-      if (currentFilter === "signpin-collected" && collected) showPin = true;
-      if (!showPin) continue;
+      if (!passesFilters({ "signpin-out": !collected, "signpin-collected": collected })) continue;
 
       const marker = L.marker(coords, { icon: makeSignPinIcon(collected) });
       marker.addTo(map);
@@ -622,24 +652,24 @@ function renderPins() {
     if (isItalian) counts.italian++;
 
     // Filter
-    let show = currentFilter === "all";
-    if (currentFilter === "No Answer"     && latest.status === "No Answer") show = true;
-    if (currentFilter === "Supporter"     && latest.status === "Supporter") show = true;
-    if (currentFilter === "Not Supporter" && latest.status === "Not Supporter") show = true;
-    if (currentFilter === "Undecided"     && latest.status === "Undecided") show = true;
-    if (currentFilter === "supporter-no-contact" && needsContact) show = true;
-    if (currentFilter === "sign-extremely" && signStage === "Extremely Possible") show = true;
-    if (currentFilter === "sign-possible"  && signStage === "Possible") show = true;
-    if (currentFilter === "sign-confirmed" && signStage === "Confirmed") show = true;
-    if (currentFilter === "sign-placed"    && signStage === "Placed") show = true;
-    if (currentFilter === "sign-removed"   && signStage === "Removed") show = true;
-    if (currentFilter === "sign-notdiscussed" && signStage === "Not Yet Discussed") show = true;
-    if (currentFilter === "senior"        && hasSenior) show = true;
-    if (currentFilter === "student"       && hasStudent) show = true;
-    if (currentFilter === "family"        && hasFamily) show = true;
-    if (currentFilter === "adult"         && hasAdultHousehold) show = true;
-    if (currentFilter === "italian"       && isItalian) show = true;
-    if (!show) continue;
+    if (!passesFilters({
+      "No Answer":            latest.status === "No Answer",
+      "Supporter":            latest.status === "Supporter",
+      "Not Supporter":        latest.status === "Not Supporter",
+      "Undecided":            latest.status === "Undecided",
+      "supporter-no-contact": needsContact,
+      "sign-extremely":       signStage === "Extremely Possible",
+      "sign-possible":        signStage === "Possible",
+      "sign-confirmed":       signStage === "Confirmed",
+      "sign-placed":          signStage === "Placed",
+      "sign-removed":         signStage === "Removed",
+      "sign-notdiscussed":    signStage === "Not Yet Discussed",
+      "senior":               hasSenior,
+      "student":              hasStudent,
+      "family":               hasFamily,
+      "adult":                hasAdultHousehold,
+      "italian":              isItalian
+    })) continue;
 
     const color = STATUS_COLOR[latest.status] || "#888";
     const myVisits = entries.filter(e => (e.volunteer || "").toLowerCase() === volunteer.toLowerCase()).length;
@@ -717,16 +747,39 @@ function toggleFilterGroup(el) {
 // Keep the chosen filter visible: if a filter is set from elsewhere, make sure
 // its section is expanded rather than silently collapsed.
 function revealActiveFilter() {
-  const active = document.querySelector("#filterPanel .filter-btn.active");
-  const section = active && active.closest(".filter-section");
-  if (section) section.classList.add("open");
+  document.querySelectorAll("#filterPanel .filter-btn.active").forEach(b => {
+    const section = b.closest(".filter-section");
+    if (section) section.classList.add("open");
+  });
+}
+
+// Reflect activeFilters in the panel: highlight chosen buttons, and light up
+// "All entries" only when nothing is selected.
+function syncFilterButtons() {
+  document.querySelectorAll("#filterPanel .filter-btn").forEach(b => {
+    const k = b.dataset.filter;
+    b.classList.toggle("active", k === "all" ? activeFilters.size === 0 : activeFilters.has(k));
+  });
+  const chosen = document.getElementById("filterChosen");
+  if (chosen) {
+    chosen.style.display = activeFilters.size ? "block" : "none";
+    chosen.textContent = activeFilters.size
+      ? `${activeFilters.size} filter${activeFilters.size > 1 ? "s" : ""} on — tap to clear`
+      : "";
+  }
 }
 
 document.querySelectorAll(".filter-btn").forEach(b => {
   b.onclick = () => {
-    document.querySelectorAll(".filter-btn").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    currentFilter = b.dataset.filter;
+    const k = b.dataset.filter;
+    if (k === "all") {
+      activeFilters.clear();            // "All entries" is the reset
+    } else if (activeFilters.has(k)) {
+      activeFilters.delete(k);          // tap again to remove
+    } else {
+      activeFilters.add(k);
+    }
+    syncFilterButtons();
     revealActiveFilter();
     renderPins();
   };
