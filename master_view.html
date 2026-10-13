@@ -269,6 +269,17 @@
       <button class="filter-btn" data-filter="italian">🇮🇹 Italian <span class="count" id="c-italian">0</span></button>
     </div>
   </div>
+  <div class="filter-section">
+    <div class="filter-group" onclick="toggleFilterGroup(this)">Canvasser<span class="chev">▶</span></div>
+    <div class="group-body">
+      <button class="filter-btn" data-filter="canv-michael">👤 Michael <span class="count" id="c-canv-michael">0</span></button>
+      <button class="filter-btn" data-filter="canv-santino">👤 Santino <span class="count" id="c-canv-santino">0</span></button>
+      <button class="filter-btn" data-filter="canv-june">👤 June <span class="count" id="c-canv-june">0</span></button>
+      <button class="filter-btn" data-filter="canv-adrienne">👤 Adrienne <span class="count" id="c-canv-adrienne">0</span></button>
+      <button class="filter-btn" data-filter="canv-other">👥 Other <span class="count" id="c-canv-other">0</span></button>
+      <button class="filter-btn" data-filter="canv-none">⬜ Not yet visited <span class="count" id="c-canv-none">0</span></button>
+    </div>
+  </div>
 </div>
 
 <button id="findMe" onclick="recenterOnMe()" title="Find me">◎</button>
@@ -494,8 +505,22 @@ const FILTER_GROUPS = {
   // Italian is its own axis, not a demographic — keeping it in its own group
   // means Supporter + Senior + Italian narrows to Italian seniors rather than
   // reading as "senior OR Italian".
-  "italian": "italian"
+  "italian": "italian",
+  "canv-michael": "canvasser", "canv-santino": "canvasser", "canv-june": "canvasser",
+  "canv-adrienne": "canvasser", "canv-other": "canvasser",
+  "canv-none": "canvasser"
 };
+
+// Named canvassers get their own filter; anyone else falls into "Other".
+// Matched on first name, case-insensitively, because the sheet holds both
+// "Michael Agueci" and "Santino", and both "june" and "June".
+const NAMED_CANVASSERS = ["michael", "santino", "june", "adrienne"];
+function canvasserKey(volunteer) {
+  const v = String(volunteer || "").trim().toLowerCase();
+  if (!v) return null;
+  const hit = NAMED_CANVASSERS.find(n => v === n || v.startsWith(n + " "));
+  return hit ? "canv-" + hit : "canv-other";
+}
 
 // `matches` maps filter key -> whether this pin satisfies it. Door pins never
 // match the signpin group and sign pins never match anything else, so choosing
@@ -583,7 +608,7 @@ function renderPins() {
   Object.values(addressMarkers).forEach(m => map.removeLayer(m));
   for (const k in addressMarkers) delete addressMarkers[k];
 
-  const counts = { all: 0, NA: 0, sup: 0, not: 0, und: 0, nocontact: 0, sign_extremely: 0, sign_possible: 0, sign_confirmed: 0, sign_placed: 0, sign_removed: 0, sign_notdiscussed: 0, italian: 0, signpin_out: 0, signpin_collected: 0, snr: 0, stu: 0, fam: 0, adult: 0 };
+  const counts = { all: 0, NA: 0, sup: 0, not: 0, und: 0, nocontact: 0, sign_extremely: 0, sign_possible: 0, sign_confirmed: 0, sign_placed: 0, sign_removed: 0, sign_notdiscussed: 0, italian: 0, canv_none: 0, canv_michael: 0, canv_santino: 0, canv_june: 0, canv_adrienne: 0, canv_other: 0, signpin_out: 0, signpin_collected: 0, snr: 0, stu: 0, fam: 0, adult: 0 };
 
   // Each entry → place pin if it has coords (or address lookup works)
   // Group by address so multiple visits coalesce into one pin
@@ -601,7 +626,12 @@ function renderPins() {
       counts.all++;
       if (collected) counts.signpin_collected++; else counts.signpin_out++;
 
-      if (!passesFilters({ "signpin-out": !collected, "signpin-collected": collected })) continue;
+      // Sign pins are a standing inventory of where signs physically are, for
+      // collection later — not canvassing. They'd only clutter the map the rest
+      // of the time, so they appear ONLY when their own filter is selected, and
+      // ignore every other group (status, canvasser, household...).
+      if (!(collected ? activeFilters.has("signpin-collected")
+                      : activeFilters.has("signpin-out"))) continue;
 
       const marker = L.marker(coords, { icon: makeSignPinIcon(collected) });
       marker.addTo(map);
@@ -624,6 +654,9 @@ function renderPins() {
     const hasAdultHousehold = entries.some(e => e.demographic === "Adult Household");
     // Italian belongs to the address, so one flagged visit flags the whole pin
     const isItalian = entries.some(e => String(e.italian || "").toUpperCase() === "Y");
+    // Every canvasser who has been to this door, not just the most recent one
+    const canvassers = new Set();
+    entries.forEach(e => { const k = canvasserKey(e.volunteer); if (k) canvassers.add(k); });
     // Supporter, no email/phone on file yet, still only one visit, and no sign
     // commitment logged — this is Michael's "go back and try for a sign" list.
     // Resolves itself the moment ANY of these happen: contact info gets
@@ -650,6 +683,12 @@ function renderPins() {
     if (hasFamily) counts.fam++;
     if (hasAdultHousehold) counts.adult++;
     if (isItalian) counts.italian++;
+    if (canvassers.size === 0)           counts.canv_none++;
+    if (canvassers.has("canv-michael"))  counts.canv_michael++;
+    if (canvassers.has("canv-santino"))  counts.canv_santino++;
+    if (canvassers.has("canv-june"))     counts.canv_june++;
+    if (canvassers.has("canv-adrienne")) counts.canv_adrienne++;
+    if (canvassers.has("canv-other"))    counts.canv_other++;
 
     // Filter
     if (!passesFilters({
@@ -668,7 +707,14 @@ function renderPins() {
       "student":              hasStudent,
       "family":               hasFamily,
       "adult":                hasAdultHousehold,
-      "italian":              isItalian
+      "italian":              isItalian,
+      "canv-michael":         canvassers.has("canv-michael"),
+      "canv-santino":         canvassers.has("canv-santino"),
+      "canv-june":            canvassers.has("canv-june"),
+      "canv-adrienne":        canvassers.has("canv-adrienne"),
+      "canv-other":           canvassers.has("canv-other"),
+      // Address on the list but nobody has knocked it yet (no volunteer logged)
+      "canv-none":            canvassers.size === 0
     })) continue;
 
     const color = STATUS_COLOR[latest.status] || "#888";
@@ -715,6 +761,12 @@ function renderPins() {
   document.getElementById("c-fam").textContent = counts.fam;
   document.getElementById("c-adult").textContent = counts.adult;
   document.getElementById("c-italian").textContent = counts.italian;
+  document.getElementById("c-canv-none").textContent = counts.canv_none;
+  document.getElementById("c-canv-michael").textContent = counts.canv_michael;
+  document.getElementById("c-canv-santino").textContent = counts.canv_santino;
+  document.getElementById("c-canv-june").textContent = counts.canv_june;
+  document.getElementById("c-canv-adrienne").textContent = counts.canv_adrienne;
+  document.getElementById("c-canv-other").textContent = counts.canv_other;
 }
 
 // === Fetch entries from Apps Script ===
